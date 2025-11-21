@@ -79,12 +79,15 @@ export const findStreamForMatch = (match, streams, eventStartDate) => {
         return streamStartedBeforeMatch;
     });
 
-    // Return first valid stream (user can reorder streams if needed)
-    // Prioritize day-specific streams over backup streams
-    const daySpecific = validStreams.find(s => s.dayIndex === matchDay);
-    if (daySpecific) return daySpecific;
+    if (validStreams.length === 0) return null;
 
-    return validStreams[0] || null;
+    // Return the stream with start time CLOSEST to (but before) the match time
+    // This handles cases where there are multiple streams (e.g., backup stream due to technical issues)
+    return validStreams.reduce((closest, current) => {
+        const closestDiff = matchTimeMs - closest.streamStartTime;
+        const currentDiff = matchTimeMs - current.streamStartTime;
+        return currentDiff < closestDiff ? current : closest;
+    });
 };
 
 /**
