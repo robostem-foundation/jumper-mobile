@@ -30,12 +30,14 @@ export const calculateEventDays = (startDate, endDate) => {
 export const getMatchDayIndex = (matchDate, eventStartDate) => {
     if (!matchDate || !eventStartDate) return 0;
 
-    const matchTime = new Date(matchDate);
-    const eventStart = new Date(eventStartDate);
+    // Extract just the calendar date (YYYY-MM-DD) from the ISO string
+    // This preserves the local timezone without conversion
+    const matchDateOnly = matchDate.split('T')[0];
+    const eventDateOnly = eventStartDate.split('T')[0];
 
-    // Reset to start of day for comparison
-    const matchDay = new Date(matchTime.getFullYear(), matchTime.getMonth(), matchTime.getDate());
-    const eventDay = new Date(eventStart.getFullYear(), eventStart.getMonth(), eventStart.getDate());
+    // Parse as dates at midnight UTC for comparison
+    const matchDay = new Date(matchDateOnly + 'T00:00:00Z');
+    const eventDay = new Date(eventDateOnly + 'T00:00:00Z');
 
     const diffTime = matchDay - eventDay;
     const dayIndex = Math.floor(diffTime / (1000 * 60 * 60 * 24));
@@ -59,6 +61,14 @@ export const findStreamForMatch = (match, streams, eventStartDate) => {
 
     const matchDay = getMatchDayIndex(matchStartTime, eventStartDate);
     const matchTimeMs = new Date(matchStartTime).getTime();
+
+    console.log('findStreamForMatch:', {
+        matchName: match.name,
+        matchStartTime,
+        eventStartDate,
+        calculatedMatchDay: matchDay,
+        availableStreams: streams.map(s => ({ label: s.label, dayIndex: s.dayIndex, streamStartTime: s.streamStartTime }))
+    });
 
     // Filter streams that could show this match:
     // 1. Stream is for the same day (or is a backup stream with dayIndex null)

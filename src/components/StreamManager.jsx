@@ -9,6 +9,7 @@ import { extractVideoId, getStreamStartTime } from '../services/youtube';
  */
 function StreamManager({ event, streams, onStreamsChange, onWebcastSelect }) {
     const [loading, setLoading] = useState({});
+    const [errors, setErrors] = useState({});
 
     // Fetch stream start times when stream URLs change
     useEffect(() => {
@@ -16,15 +17,28 @@ function StreamManager({ event, streams, onStreamsChange, onWebcastSelect }) {
             for (const stream of streams) {
                 if (stream.videoId && !stream.streamStartTime && !loading[stream.id]) {
                     setLoading(prev => ({ ...prev, [stream.id]: true }));
+                    setErrors(prev => ({ ...prev, [stream.id]: null }));
+
                     try {
                         const startTime = await getStreamStartTime(stream.videoId);
                         if (startTime) {
                             updateStream(stream.id, {
                                 streamStartTime: new Date(startTime).getTime()
                             });
+                            setErrors(prev => ({ ...prev, [stream.id]: null }));
+                        } else {
+                            // Stream start time not available
+                            setErrors(prev => ({
+                                ...prev,
+                                [stream.id]: 'Unable to detect stream start time. You\'ll need to manually sync.'
+                            }));
                         }
                     } catch (error) {
                         console.error(`Error fetching stream start time for ${stream.id}:`, error);
+                        setErrors(prev => ({
+                            ...prev,
+                            [stream.id]: 'Error loading stream info. Check your YouTube API key in settings.'
+                        }));
                     } finally {
                         setLoading(prev => ({ ...prev, [stream.id]: false }));
                     }
@@ -33,7 +47,7 @@ function StreamManager({ event, streams, onStreamsChange, onWebcastSelect }) {
         };
 
         fetchStreamTimes();
-    }, [streams]);
+    }, [streams.map(s => s.videoId).join(',')]); // Only re-run when video IDs change
 
     const updateStream = (streamId, updates) => {
         const updated = streams.map(s =>
@@ -102,6 +116,7 @@ function StreamManager({ event, streams, onStreamsChange, onWebcastSelect }) {
                             key={stream.id}
                             stream={stream}
                             loading={loading[stream.id]}
+                            error={errors[stream.id]}
                             canRemove={streams.length > 1}
                             onUrlChange={(url) => handleUrlChange(stream.id, url)}
                             onRemove={() => removeStream(stream.id)}
@@ -125,6 +140,7 @@ function StreamManager({ event, streams, onStreamsChange, onWebcastSelect }) {
                             key={stream.id}
                             stream={stream}
                             loading={loading[stream.id]}
+                            error={errors[stream.id]}
                             canRemove={streams.length > 1}
                             onUrlChange={(url) => handleUrlChange(stream.id, url)}
                             onRemove={() => removeStream(stream.id)}
@@ -139,7 +155,7 @@ function StreamManager({ event, streams, onStreamsChange, onWebcastSelect }) {
 /**
  * Individual stream input component
  */
-function StreamInput({ stream, loading, canRemove, onUrlChange, onRemove }) {
+function StreamInput({ stream, loading, error, canRemove, onUrlChange, onRemove }) {
     return (
         <div className="relative">
             <div className="flex items-center gap-2">
@@ -152,9 +168,14 @@ function StreamInput({ stream, loading, canRemove, onUrlChange, onRemove }) {
                                 Loading stream info...
                             </span>
                         )}
-                        {stream.streamStartTime && (
+                        {stream.streamStartTime && !loading && (
                             <span className="ml-2 text-xs text-green-400">
                                 ✓ Stream detected
+                            </span>
+                        )}
+                        {error && !loading && (
+                            <span className="ml-2 text-xs text-yellow-400">
+                                ⚠ {error}
                             </span>
                         )}
                     </label>

@@ -458,12 +458,19 @@ function App() {
                             <div className="flex items-center gap-3">
                                 <div className="flex items-center gap-2 text-xs">
                                     {(() => {
+                                        // Check if any stream has been synced (has streamStartTime)
+                                        const syncedStreams = streams.filter(s => s.streamStartTime);
+                                        const isSynced = syncedStreams.length > 0;
                                         const activeStream = getActiveStream();
-                                        const isSynced = activeStream?.streamStartTime;
+
                                         return (
                                             <>
                                                 <div className={`w-2 h-2 rounded-full ${isSynced ? 'bg-[#4FCEEC] shadow-[0_0_8px_rgba(79,206,236,0.6)]' : 'bg-red-500'}`} />
-                                                <span className="text-gray-400">{isSynced ? `${activeStream.label} Synced` : 'Not Synced'}</span>
+                                                <span className="text-gray-400">
+                                                    {isSynced
+                                                        ? `${syncedStreams.length} stream${syncedStreams.length > 1 ? 's' : ''} synced`
+                                                        : 'Not Synced'}
+                                                </span>
                                             </>
                                         );
                                     })()}
@@ -491,14 +498,25 @@ function App() {
                                 const matchStream = findStreamForMatch(match, streams, event?.start);
                                 const canJump = matchStream && matchStream.streamStartTime;
 
+                                // Debug logging
+                                if (!canJump && hasStarted && !isGrayedOut) {
+                                    console.log('Match cannot jump:', {
+                                        match: matchName,
+                                        matchTime: match.started,
+                                        eventStart: event?.start,
+                                        matchStream: matchStream,
+                                        streams: streams.map(s => ({ id: s.id, label: s.label, dayIndex: s.dayIndex, streamStartTime: s.streamStartTime }))
+                                    });
+                                }
+
                                 return (
                                     <div
                                         key={match.id}
                                         className={`p-4 rounded-lg border transition-all ${selectedMatchId === match.id
-                                                ? 'bg-[#4FCEEC]/20 border-[#4FCEEC]'
-                                                : isGrayedOut
-                                                    ? 'bg-black border-gray-800 opacity-50'
-                                                    : 'bg-black border-gray-800 hover:border-gray-700'
+                                            ? 'bg-[#4FCEEC]/20 border-[#4FCEEC]'
+                                            : isGrayedOut
+                                                ? 'bg-black border-gray-800 opacity-50'
+                                                : 'bg-black border-gray-800 hover:border-gray-700'
                                             }`}
                                         title={isGrayedOut ? grayOutReason : ''}
                                     >
