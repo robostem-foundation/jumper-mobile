@@ -5,8 +5,6 @@ import { getAllHistory, deleteHistoryEntry } from '../services/eventCache';
 import { getMatchDayIndex } from '../utils/streamMatching';
 
 const EventHistory = ({ isOpen, onClose, onSelectEvent }) => {
-    if (!isOpen) return null;
-
     const [history, setHistory] = React.useState([]);
 
     React.useEffect(() => {
@@ -14,6 +12,8 @@ const EventHistory = ({ isOpen, onClose, onSelectEvent }) => {
             setHistory(getAllHistory());
         }
     }, [isOpen]);
+
+    if (!isOpen) return null;
 
     const handleDelete = (eventId, e) => {
         e.stopPropagation();

@@ -133,3 +133,100 @@ export const getMatchesForEventAndTeam = async (eventId, teamId) => {
         return aTime - bTime;
     });
 };
+
+export const getTeamsForEvent = async (eventId) => {
+    const client = getClient();
+    let allTeams = [];
+    let page = 1;
+    let lastPage = 1;
+
+    try {
+        do {
+            const response = await client.get(`/events/${eventId}/teams`, {
+                params: {
+                    page,
+                    per_page: 250
+                }
+            });
+            allTeams = [...allTeams, ...response.data.data];
+            lastPage = response.data.meta.last_page;
+            page++;
+        } while (page <= lastPage);
+        return allTeams;
+    } catch (error) {
+        console.error('Error fetching teams:', error);
+        return [];
+    }
+};
+
+export const getRankingsForEvent = async (eventId, divisions = []) => {
+    const client = getClient();
+    let allRankings = [];
+
+    // All events have divisions, so we go directly to division-based endpoints
+    // instead of trying the main event endpoint which often returns 404
+    if (divisions.length === 0) {
+        console.warn('No divisions provided for rankings fetch');
+        return [];
+    }
+
+    try {
+        for (const division of divisions) {
+            let dPage = 1;
+            let dLastPage = 1;
+            do {
+                const response = await client.get(`/events/${eventId}/divisions/${division.id}/rankings`, {
+                    params: { page: dPage, per_page: 250 }
+                });
+                allRankings = [...allRankings, ...response.data.data];
+                dLastPage = response.data.meta.last_page;
+                dPage++;
+            } while (dPage <= dLastPage);
+        }
+        return allRankings;
+    } catch (error) {
+        // Suppress 404s as they might mean rankings aren't published yet
+        if (error.response && error.response.status !== 404) {
+            console.warn('Could not fetch division rankings', error);
+        }
+        return [];
+    }
+};
+
+export const getSkillsForEvent = async (eventId) => {
+    const client = getClient();
+    let allSkills = [];
+    let page = 1;
+    let lastPage = 1;
+
+    try {
+        do {
+            const response = await client.get(`/events/${eventId}/skills`, {
+                params: {
+                    page,
+                    per_page: 250
+                }
+            });
+            allSkills = [...allSkills, ...response.data.data];
+            lastPage = response.data.meta.last_page;
+            page++;
+        } while (page <= lastPage);
+        return allSkills;
+    } catch (error) {
+        if (error.response && error.response.status === 404) {
+            // console.warn('Skills not found for event');
+        } else {
+            console.error('Error fetching skills:', error);
+        }
+        return [];
+    }
+};
+
+export const getWorldSkillsForTeams = async (seasonId, teamIds) => {
+    // The RobotEvents API v2 does not currently support bulk fetching of skills for specific teams
+    // or a generic /skills endpoint that we can filter by team list efficiently.
+    // Endpoints like /skills and /seasons/{id}/skills return 404.
+    // To avoid errors, we return an empty list.
+    console.warn('World Skills API not available for bulk fetch.');
+    return [];
+};

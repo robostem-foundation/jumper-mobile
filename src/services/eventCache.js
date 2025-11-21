@@ -85,6 +85,8 @@ export const saveEventToHistory = (event, streams) => {
         eventEnd: event.end,
         eventSku: event.sku,
         eventProgram: event.program,
+        eventSeason: event.season,
+        eventDivisions: event.divisions,
         streams: streams.map(s => ({
             label: s.label,
             url: s.url,

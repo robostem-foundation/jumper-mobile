@@ -6,6 +6,7 @@ import SettingsModal from './components/SettingsModal';
 import WebcastSelector from './components/WebcastSelector';
 import EventHistory from './components/EventHistory';
 import StreamManager from './components/StreamManager';
+import TeamList from './components/TeamList';
 import { getEventBySku, getTeamByNumber, getMatchesForEventAndTeam } from './services/robotevents';
 import { extractVideoId, getStreamStartTime } from './services/youtube';
 import { findWebcastCandidates } from './services/webcastDetection';
@@ -166,11 +167,13 @@ function App() {
             start: historyEntry.eventStart,
             end: historyEntry.eventEnd,
             sku: historyEntry.eventSku,
-            program: historyEntry.eventProgram
+            program: historyEntry.eventProgram,
+            season: historyEntry.eventSeason,
+            divisions: historyEntry.eventDivisions
         };
 
-        // If program is missing (legacy history), fetch full event details
-        if (!reconstructedEvent.program && reconstructedEvent.sku) {
+        // If program, season, or divisions is missing (legacy history), fetch full event details
+        if ((!reconstructedEvent.program || !reconstructedEvent.season || !reconstructedEvent.divisions) && reconstructedEvent.sku) {
             try {
                 const fullEvent = await getEventBySku(reconstructedEvent.sku);
                 reconstructedEvent = fullEvent;
@@ -212,6 +215,7 @@ function App() {
 
     const handleTeamSearch = async (specificTeamNumber) => {
         const searchNumber = specificTeamNumber || teamNumber;
+        setActiveTab('search'); // Switch to search tab when searching
 
         if (!event) {
             setError('Please find an event first');
@@ -833,9 +837,10 @@ function App() {
                                     </div>
                                 </>
                             ) : (
-                                <div className="flex-1 flex items-center justify-center text-gray-500">
-                                    <p>Team List (Coming Soon)</p>
-                                </div>
+                                <TeamList
+                                    event={event}
+                                    onTeamSelect={handleTeamSearch}
+                                />
                             )}
                         </div>
                     </div>
