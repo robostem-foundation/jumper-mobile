@@ -62,14 +62,6 @@ export const findStreamForMatch = (match, streams, eventStartDate) => {
     const matchDay = getMatchDayIndex(matchStartTime, eventStartDate);
     const matchTimeMs = new Date(matchStartTime).getTime();
 
-    console.log('findStreamForMatch:', {
-        matchName: match.name,
-        matchStartTime,
-        eventStartDate,
-        calculatedMatchDay: matchDay,
-        availableStreams: streams.map(s => ({ label: s.label, dayIndex: s.dayIndex, streamStartTime: s.streamStartTime }))
-    });
-
     // Filter streams that could show this match:
     // 1. Stream is for the same day (or is a backup stream with dayIndex null)
     // 2. Stream started before or at the match time

@@ -60,13 +60,20 @@ function App() {
         const newStreams = [];
 
         for (let i = 0; i < days; i++) {
+            // Calculate the date for this day
+            const eventStartDate = new Date(eventData.start);
+            const dayDate = new Date(eventStartDate);
+            dayDate.setDate(eventStartDate.getDate() + i);
+            const dateLabel = format(dayDate, 'MMM d');
+
             newStreams.push({
                 id: `stream-day-${i}`,
                 url: '',
                 videoId: null,
                 streamStartTime: null,
                 dayIndex: i,
-                label: days > 1 ? `Day ${i + 1}` : 'Livestream'
+                label: days > 1 ? `Day ${i + 1} - ${dateLabel}` : 'Livestream',
+                date: dayDate.toISOString()
             });
         }
 
@@ -213,6 +220,14 @@ function App() {
         if (!matchStream) {
             alert('No stream available for this match.');
             return;
+        }
+
+        // Pause the currently active player if switching streams
+        if (matchStream.id !== activeStreamId && activeStreamId) {
+            const currentPlayer = players[activeStreamId];
+            if (currentPlayer && typeof currentPlayer.pauseVideo === 'function') {
+                currentPlayer.pauseVideo();
+            }
         }
 
         // Switch to the correct stream if not already active
@@ -486,91 +501,116 @@ function App() {
                             </div>
                         </div>
 
-                        <div className="space-y-2 max-h-96 overflow-y-auto">
-                            {matches.map((match) => {
-                                const hasStarted = !!match.started;
-                                const alliance = match.alliances?.find(a => a.teams?.some(t => t.team?.id === team.id));
-                                const matchName = match.name?.replace(/teamwork/gi, 'Qualification') || match.name;
+                        <div className="space-y-4 max-h-96 overflow-y-auto">
+                            {(() => {
+                                // Group matches by day
+                                const matchesByDay = {};
+                                matches.forEach(match => {
+                                    if (!match.started) return; // Skip unplayed matches
+                                    const dayIndex = getMatchDayIndex(match.started, event?.start);
+                                    if (!matchesByDay[dayIndex]) {
+                                        matchesByDay[dayIndex] = [];
+                                    }
+                                    matchesByDay[dayIndex].push(match);
+                                });
 
-                                // Check if match is available
-                                const grayOutReason = getGrayOutReason(match, streams, event?.start);
-                                const isGrayedOut = !!grayOutReason;
-                                const matchStream = findStreamForMatch(match, streams, event?.start);
-                                const canJump = matchStream && matchStream.streamStartTime;
+                                return Object.keys(matchesByDay).sort().map((dayIndex) => {
+                                    const dayMatches = matchesByDay[dayIndex];
+                                    const dayStream = streams.find(s => s.dayIndex === parseInt(dayIndex));
+                                    const dayLabel = dayStream?.label || `Day ${parseInt(dayIndex) + 1}`;
 
-                                // Debug logging
-                                if (!canJump && hasStarted && !isGrayedOut) {
-                                    console.log('Match cannot jump:', {
-                                        match: matchName,
-                                        matchTime: match.started,
-                                        eventStart: event?.start,
-                                        matchStream: matchStream,
-                                        streams: streams.map(s => ({ id: s.id, label: s.label, dayIndex: s.dayIndex, streamStartTime: s.streamStartTime }))
-                                    });
-                                }
-
-                                return (
-                                    <div
-                                        key={match.id}
-                                        className={`p-4 rounded-lg border transition-all ${selectedMatchId === match.id
-                                            ? 'bg-[#4FCEEC]/20 border-[#4FCEEC]'
-                                            : isGrayedOut
-                                                ? 'bg-black border-gray-800 opacity-50'
-                                                : 'bg-black border-gray-800 hover:border-gray-700'
-                                            }`}
-                                        title={isGrayedOut ? grayOutReason : ''}
-                                    >
-                                        <div className="flex justify-between items-center">
-                                            <div className="flex-1">
-                                                <h4 className="font-bold text-white">{matchName}</h4>
-                                                <p className="text-xs text-gray-400">
-                                                    {hasStarted ? format(new Date(match.started), 'h:mm a') : 'Not Yet Played'}
-                                                </p>
+                                    return (
+                                        <div key={dayIndex}>
+                                            {/* Day Header */}
+                                            <div className="flex items-center gap-2 mb-2 sticky top-0 bg-gray-900 py-2 z-10">
+                                                <div className="flex-1 h-px bg-gray-700"></div>
+                                                <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
+                                                    {dayLabel}
+                                                </span>
+                                                <div className="flex-1 h-px bg-gray-700"></div>
                                             </div>
-                                            {alliance && (
-                                                <div className={`px-3 py-1 rounded text-xs font-bold uppercase mr-3 ${alliance.color === 'red' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
-                                                    }`}>
-                                                    {alliance.color}
-                                                </div>
-                                            )}
-                                            {canJump ? (
-                                                <button
-                                                    onClick={() => jumpToMatch(match)}
-                                                    disabled={!hasStarted || isGrayedOut}
-                                                    title={
-                                                        isGrayedOut
-                                                            ? grayOutReason
-                                                            : !hasStarted
-                                                                ? "Match hasn't been played yet"
-                                                                : ""
-                                                    }
-                                                    className="bg-[#4FCEEC] hover:bg-[#3db8d6] disabled:opacity-50 disabled:cursor-not-allowed text-black px-4 py-2 rounded-lg flex items-center gap-2 font-bold text-sm transition-colors"
-                                                >
-                                                    <Play className="w-4 h-4" /> JUMP
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => {
-                                                        setSelectedMatchId(match.id);
-                                                        setSyncMode(true);
-                                                    }}
-                                                    disabled={!hasStarted || isGrayedOut}
-                                                    title={
-                                                        isGrayedOut
-                                                            ? grayOutReason
-                                                            : !hasStarted
-                                                                ? "Match hasn't been played yet"
-                                                                : "Sync to this match"
-                                                    }
-                                                    className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 font-semibold text-sm transition-colors"
-                                                >
-                                                    <RefreshCw className="w-4 h-4" /> SYNC
-                                                </button>
-                                            )}
+
+                                            {/* Matches for this day */}
+                                            <div className="space-y-2 mb-4">
+                                                {dayMatches.map((match) => {
+                                                    const hasStarted = !!match.started;
+                                                    const alliance = match.alliances?.find(a => a.teams?.some(t => t.team?.id === team.id));
+                                                    const matchName = match.name?.replace(/teamwork/gi, 'Qualification') || match.name;
+
+                                                    // Check if match is available
+                                                    const grayOutReason = getGrayOutReason(match, streams, event?.start);
+                                                    const isGrayedOut = !!grayOutReason;
+                                                    const matchStream = findStreamForMatch(match, streams, event?.start);
+                                                    const canJump = matchStream && matchStream.streamStartTime;
+
+
+                                                    return (
+                                                        <div
+                                                            key={match.id}
+                                                            className={`p-4 rounded-lg border transition-all ${selectedMatchId === match.id
+                                                                ? 'bg-[#4FCEEC]/20 border-[#4FCEEC]'
+                                                                : isGrayedOut
+                                                                    ? 'bg-black border-gray-800 opacity-50'
+                                                                    : 'bg-black border-gray-800 hover:border-gray-700'
+                                                                }`}
+                                                            title={isGrayedOut ? grayOutReason : ''}
+                                                        >
+                                                            <div className="flex justify-between items-center">
+                                                                <div className="flex-1">
+                                                                    <h4 className="font-bold text-white">{matchName}</h4>
+                                                                    <p className="text-xs text-gray-400">
+                                                                        {hasStarted ? format(new Date(match.started), 'h:mm a') : 'Not Yet Played'}
+                                                                    </p>
+                                                                </div>
+                                                                {alliance && (
+                                                                    <div className={`px-3 py-1 rounded text-xs font-bold uppercase mr-3 ${alliance.color === 'red' ? 'bg-red-500/20 text-red-400' : 'bg-blue-500/20 text-blue-400'
+                                                                        }`}>
+                                                                        {alliance.color}
+                                                                    </div>
+                                                                )}
+                                                                {canJump ? (
+                                                                    <button
+                                                                        onClick={() => jumpToMatch(match)}
+                                                                        disabled={!hasStarted || isGrayedOut}
+                                                                        title={
+                                                                            isGrayedOut
+                                                                                ? grayOutReason
+                                                                                : !hasStarted
+                                                                                    ? "Match hasn't been played yet"
+                                                                                    : ""
+                                                                        }
+                                                                        className="bg-[#4FCEEC] hover:bg-[#3db8d6] disabled:opacity-50 disabled:cursor-not-allowed text-black px-4 py-2 rounded-lg flex items-center gap-2 font-bold text-sm transition-colors"
+                                                                    >
+                                                                        <Play className="w-4 h-4" /> JUMP
+                                                                    </button>
+                                                                ) : (
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSelectedMatchId(match.id);
+                                                                            setSyncMode(true);
+                                                                        }}
+                                                                        disabled={!hasStarted || isGrayedOut}
+                                                                        title={
+                                                                            isGrayedOut
+                                                                                ? grayOutReason
+                                                                                : !hasStarted
+                                                                                    ? "Match hasn't been played yet"
+                                                                                    : "Sync to this match"
+                                                                        }
+                                                                        className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg flex items-center gap-2 font-semibold text-sm transition-colors"
+                                                                    >
+                                                                        <RefreshCw className="w-4 h-4" /> SYNC
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                });
+                            })()}
                         </div>
                     </div>
                 )}
