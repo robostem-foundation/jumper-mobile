@@ -7,6 +7,7 @@ import WebcastSelector from './components/WebcastSelector';
 import EventHistory from './components/EventHistory';
 import StreamManager from './components/StreamManager';
 import TeamList from './components/TeamList';
+import WordPressHeader from './components/WordPressHeader';
 import { getEventBySku, getTeamByNumber, getMatchesForEventAndTeam } from './services/robotevents';
 import { extractVideoId, getStreamStartTime } from './services/youtube';
 import { findWebcastCandidates } from './services/webcastDetection';
@@ -389,34 +390,28 @@ function App() {
 
     return (
         <div className="min-h-screen bg-black text-white font-sans selection:bg-[#4FCEEC] selection:text-black flex flex-col overflow-hidden">
-            {/* Header */}
-            <header className="bg-gray-900 border-b border-gray-800 p-4 z-50 backdrop-blur-md bg-opacity-80 flex-shrink-0">
-                <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="bg-[#4FCEEC] p-2 rounded-lg shadow-[0_0_15px_rgba(79,206,236,0.4)]">
-                            <Zap className="w-6 h-6 text-black" />
-                        </div>
-                        <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">
-                            VEX Match Jumper
-                        </h1>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowEventHistory(true)}
-                            className="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white"
-                            title="Event History"
-                        >
-                            <History className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={() => setIsSettingsOpen(true)}
-                            className="p-2 hover:bg-gray-800 rounded-full transition-colors text-gray-400 hover:text-white"
-                        >
-                            <Settings className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
+            {/* WordPress Header */}
+            <header className="bg-gray-900 border-b border-gray-800 z-50 backdrop-blur-md bg-opacity-80 flex-shrink-0">
+                <WordPressHeader />
             </header>
+
+            {/* Floating Controls (Bottom Left) */}
+            <div className="fixed bottom-4 left-4 z-40 flex gap-2">
+                <button
+                    onClick={() => setShowEventHistory(true)}
+                    className="p-3 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded-full transition-all shadow-lg hover:shadow-xl backdrop-blur-sm"
+                    title="Event History"
+                >
+                    <History className="w-5 h-5 text-gray-300 hover:text-white" />
+                </button>
+                <button
+                    onClick={() => setIsSettingsOpen(true)}
+                    className="p-3 bg-gray-900/90 hover:bg-gray-800 border border-gray-700 rounded-full transition-all shadow-lg hover:shadow-xl backdrop-blur-sm"
+                    title="Settings"
+                >
+                    <Settings className="w-5 h-5 text-gray-300 hover:text-white" />
+                </button>
+            </div>
 
             {/* Error Display */}
             {error && (
