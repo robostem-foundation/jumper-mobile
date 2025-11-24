@@ -1,17 +1,19 @@
+```json
 {
-    "redirects": [
-        {
-            "source": "/",
-            "destination": "https://robostem.org",
-            "permanent": false
-        }
-    ],
     "rewrites": [
         {
             "source": "/jumper/:path*",
             "destination": "/index.html"
         }
     ],
+    "redirects": [
+        {
+            "source": "^/$",
+            "destination": "https://robostem.org",
+            "permanent": false
+        }
+    ],
     "cleanUrls": true,
     "trailingSlash": false
 }
+```
