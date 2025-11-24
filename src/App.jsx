@@ -880,6 +880,22 @@ function App() {
                     onClose={() => setShowEventHistory(false)}
                     onSelectEvent={handleLoadFromHistory}
                 />
+
+                {/* Copyright Footer */}
+                <footer className="fixed bottom-4 right-4 text-xs text-slate-400 text-center sm:text-right max-w-xs sm:max-w-2xl">
+                    <p className="bg-slate-900/80 backdrop-blur-sm px-4 py-2 rounded-lg border border-slate-700/50">
+                        © 2025 RoboSTEM Foundation |{' '}
+                        <a
+                            href="https://forms.gle/R3XS6nXymbLc57RSA"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 transition-colors"
+                        >
+                            Report Bugs
+                        </a>
+                        {' '}| Made with <span className="text-red-500">❤</span> by Alexander Deng
+                    </p>
+                </footer>
             </main>
             <Analytics debug={true} />
         </div>
