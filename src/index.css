@@ -8,8 +8,17 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  background-color: #0f172a;
+  /* slate-900 */
+  color: #f8fafc;
+  /* slate-50 */
   width: 100%;
   overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
