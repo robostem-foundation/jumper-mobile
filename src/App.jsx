@@ -531,8 +531,8 @@ function App() {
 
                     {/* Right Column: Controls */}
                     <div className="lg:col-span-4 flex flex-col gap-4 h-full min-h-0">
-                        {/* 1. Find Event */}
-                        <div className="bg-gray-900 border border-gray-800 p-5 rounded-xl space-y-3 flex-shrink-0">
+                        {/* 3. Match List */}
+                        <div className="bg-gray-900 border border-gray-800 p-5 rounded-xl space-y-3 flex-1 overflow-hidden flex flex-col min-h-0">
                             <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">1. Find Event</h2>
                             <div className="flex gap-2">
                                 <input
