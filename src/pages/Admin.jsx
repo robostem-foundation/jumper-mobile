@@ -111,8 +111,12 @@ function Admin() {
             return;
         }
 
-        const cleanedStreams = newRoute.streams.filter(s => s.trim() !== '');
-        const routeData = { ...newRoute, streams: cleanedStreams };
+        // Trim trailing empty streams, but preserve internal ones for correct indexing
+        const streams = [...newRoute.streams];
+        while (streams.length > 1 && streams[streams.length - 1].trim() === '') {
+            streams.pop();
+        }
+        const routeData = { ...newRoute, streams };
 
         let updatedRoutes;
         if (editingIndex !== null) {
@@ -340,8 +344,8 @@ function Admin() {
                             <button
                                 onClick={handleSaveRoute}
                                 className={`w-full font-bold py-3.5 rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg ${editingIndex !== null
-                                        ? 'bg-yellow-500 hover:bg-yellow-600 text-black'
-                                        : 'bg-[#4FCEEC] hover:bg-[#3db8d6] text-black'
+                                    ? 'bg-yellow-500 hover:bg-yellow-600 text-black'
+                                    : 'bg-[#4FCEEC] hover:bg-[#3db8d6] text-black'
                                     }`}
                             >
                                 {editingIndex !== null ? <Save className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
