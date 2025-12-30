@@ -604,28 +604,8 @@ function App() {
     };
 
     const jumpToMatch = (match) => {
-        console.log('🎯 [JUMP TO MATCH] Starting jump:', {
-            matchId: match.id,
-            matchName: match.name,
-            matchStarted: match.started,
-            matchScheduled: match.scheduled
-        });
-
         // Find the appropriate stream for this match
         const matchStream = findStreamForMatch(match, streams, event?.start);
-
-        console.log('📺 [JUMP TO MATCH] Stream found:', {
-            streamId: matchStream?.id,
-            streamLabel: matchStream?.label,
-            streamDayIndex: matchStream?.dayIndex,
-            streamStartTime: matchStream?.streamStartTime ? new Date(matchStream.streamStartTime).toISOString() : null,
-            allStreams: streams.map(s => ({
-                id: s.id,
-                label: s.label,
-                dayIndex: s.dayIndex,
-                streamStartTime: s.streamStartTime ? new Date(s.streamStartTime).toISOString() : null
-            }))
-        });
 
         if (!matchStream) {
             alert('No stream available for this match.');
@@ -642,10 +622,6 @@ function App() {
 
         // Switch to the correct stream if not already active
         if (matchStream.id !== activeStreamId) {
-            console.log('🔄 [JUMP TO MATCH] Switching streams:', {
-                from: activeStreamId,
-                to: matchStream.id
-            });
             setActiveStreamId(matchStream.id);
         }
 
@@ -663,16 +639,6 @@ function App() {
         const matchStartMs = new Date(match.started).getTime();
         const seekTimeSec = (matchStartMs - matchStream.streamStartTime) / 1000;
 
-        console.log('⏰ [JUMP TO MATCH] Calculated seek time:', {
-            matchStartMs,
-            matchStartDate: new Date(matchStartMs).toISOString(),
-            streamStartTimeMs: matchStream.streamStartTime,
-            streamStartDate: new Date(matchStream.streamStartTime).toISOString(),
-            differenceMs: matchStartMs - matchStream.streamStartTime,
-            seekTimeSec,
-            seekTimeFormatted: `${Math.floor(seekTimeSec / 60)}m ${Math.floor(seekTimeSec % 60)}s`
-        });
-
         if (seekTimeSec < 0) {
             alert("This match happened before the stream started!");
             return;
@@ -681,8 +647,6 @@ function App() {
         player.seekTo(seekTimeSec, true);
         player.playVideo();
         setSelectedMatchId(match.id);
-
-        console.log('✅ [JUMP TO MATCH] Jump complete, match selected:', match.id);
     };
 
     const adjustSync = (seconds) => {
