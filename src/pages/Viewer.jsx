@@ -63,6 +63,7 @@ function Viewer() {
     // UI State
     const [activeTab, setActiveTab] = useState('list'); // 'search', 'list', 'matches'
     const [expandedMatchId, setExpandedMatchId] = useState(null);
+    const [isEventSearchCollapsed, setIsEventSearchCollapsed] = useState(false);
 
     // Data
     const [event, setEvent] = useState(null);
@@ -471,6 +472,7 @@ function Viewer() {
             setError(err.message);
         } finally {
             setEventLoading(false);
+            if (!error) setIsEventSearchCollapsed(true);
         }
     };
 
@@ -730,16 +732,7 @@ function Viewer() {
         setSelectedMatchId(match.id);
     };
 
-    const adjustSync = (seconds) => {
-        const activeStream = getActiveStream();
-        if (!activeStream || !activeStream.streamStartTime) return;
 
-        setStreams(prev => prev.map(s =>
-            s.id === activeStream.id
-                ? { ...s, streamStartTime: s.streamStartTime + (seconds * 1000) }
-                : s
-        ));
-    };
 
 
 
@@ -932,32 +925,51 @@ function Viewer() {
 
                     {/* Right Column: Controls */}
                     <div className="xl:col-span-4 flex flex-col gap-4">
-                        {/* 3. Match List */}
-                        <div className="bg-gray-900 border border-gray-800 p-5 rounded-xl space-y-3 flex-shrink-0">
-                            <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">1. Find Event</h2>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={eventUrl}
-                                    onChange={(e) => setEventUrl(e.target.value)}
-                                    placeholder="Paste RobotEvents URL..."
-                                    className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#4FCEEC] focus:ring-1 focus:ring-[#4FCEEC] outline-none transition-all"
-                                    onKeyDown={(e) => e.key === 'Enter' && handleEventSearch()}
-                                />
-                                <button
-                                    onClick={handleEventSearch}
-                                    disabled={eventLoading}
-                                    className="bg-[#4FCEEC] hover:bg-[#3db8d6] disabled:opacity-50 text-black px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center gap-2"
-                                >
-                                    {eventLoading ? <Loader className="w-4 h-4 animate-spin" /> : 'Search'}
-                                </button>
-                            </div>
-                            {event && (
-                                <div className="p-3 bg-black border border-gray-700 rounded-lg">
-                                    <p className="text-white font-semibold text-sm line-clamp-1" title={event.name}>{event.name}</p>
-                                    <p className="text-xs text-gray-400 mt-1">{event.location?.venue}, {event.location?.city}</p>
+                        {/* Event Search Section */}
+                        <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden flex-shrink-0">
+                            <button
+                                onClick={() => setIsEventSearchCollapsed(!isEventSearchCollapsed)}
+                                className="w-full p-4 flex justify-between items-center hover:bg-gray-800/50 transition-colors"
+                            >
+                                <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider flex items-center gap-2">
+                                    <LayoutList className="w-4 h-4" />
+                                    Find Event
+                                </h2>
+                                <div className="flex items-center gap-3">
+                                    {event && isEventSearchCollapsed && (
+                                        <span className="text-xs text-[#4FCEEC] font-semibold truncate max-w-[150px] sm:max-w-[200px]">
+                                            {event.name}
+                                        </span>
+                                    )}
+                                    {isEventSearchCollapsed ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronUp className="w-4 h-4 text-gray-500" />}
                                 </div>
-                            )}
+                            </button>
+
+                            <div className={`p-5 pt-0 space-y-3 transition-all duration-300 ${isEventSearchCollapsed ? 'max-h-0 opacity-0 pointer-events-none' : 'max-h-[500px] opacity-100'}`}>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={eventUrl}
+                                        onChange={(e) => setEventUrl(e.target.value)}
+                                        placeholder="Paste RobotEvents URL..."
+                                        className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#4FCEEC] focus:ring-1 focus:ring-[#4FCEEC] outline-none transition-all"
+                                        onKeyDown={(e) => e.key === 'Enter' && handleEventSearch()}
+                                    />
+                                    <button
+                                        onClick={handleEventSearch}
+                                        disabled={eventLoading}
+                                        className="bg-[#4FCEEC] hover:bg-[#3db8d6] disabled:opacity-50 text-black px-4 py-2 rounded-lg font-bold text-sm transition-colors flex items-center gap-2"
+                                    >
+                                        {eventLoading ? <Loader className="w-4 h-4 animate-spin" /> : 'Search'}
+                                    </button>
+                                </div>
+                                {event && (
+                                    <div className="p-3 bg-black border border-gray-700 rounded-lg">
+                                        <p className="text-white font-semibold text-sm line-clamp-1" title={event.name}>{event.name}</p>
+                                        <p className="text-xs text-gray-400 mt-1">{event.location?.venue}, {event.location?.city}</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Tabs */}
@@ -997,7 +1009,7 @@ function Viewer() {
                                 <>
                                     {/* Search Header */}
                                     <div className="p-5 border-b border-gray-800 space-y-3 flex-shrink-0 bg-gray-900 z-10 rounded-t-xl">
-                                        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">4. Find Team</h2>
+                                        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Find Team</h2>
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
@@ -1049,12 +1061,6 @@ function Viewer() {
                                                                 );
                                                             })()}
                                                         </div>
-                                                        {getActiveStream()?.streamStartTime && (
-                                                            <div className="flex gap-1">
-                                                                <button onClick={() => adjustSync(1)} className="px-1.5 py-0.5 bg-gray-800 hover:bg-gray-700 rounded text-[10px] text-white">+1s</button>
-                                                                <button onClick={() => adjustSync(-1)} className="px-1.5 py-0.5 bg-gray-800 hover:bg-gray-700 rounded text-[10px] text-white">-1s</button>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 </div>
 
