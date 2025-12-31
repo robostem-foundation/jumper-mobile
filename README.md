@@ -1,6 +1,7 @@
 # VEX Match Jumper
 
-[![Vercel Analytics](https://vercel.com/api/analytics/badge?project=prj_Z1STPTqYy48RkwRdpmX5dcBAiq4G)](https://vercel.com/analytics)
+![Vercel Analytics Enabled](https://img.shields.io/badge/Vercel%20Analytics-enabled-brightgreen)
+
 
 A web app for watching VEX competition livestreams without digging through long recordings.
 
