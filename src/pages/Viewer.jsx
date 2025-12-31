@@ -56,6 +56,7 @@ function Viewer() {
         return false;
     });
     const hasDeepLinked = useRef(false);
+    const isInternalLoading = useRef(false);
 
     // Form inputs
     const [eventUrl, setEventUrl] = useState('');
@@ -99,6 +100,7 @@ function Viewer() {
     const [presets, setPresets] = useState([]);
     const [presetsLoading, setPresetsLoading] = useState(false);
     const [selectedPresetSku, setSelectedPresetSku] = useState('');
+    const urlPresetRef = useRef(urlPreset);
 
     // Multi-Division State
     const [multiDivisionMode, setMultiDivisionMode] = useState(false);
@@ -147,18 +149,32 @@ function Viewer() {
     }, []);
 
     // Deep linking: Load from URL params on mount
+    // Reactive URL parameter detection (Mount + Back/Forward)
     useEffect(() => {
-        if (hasDeepLinked.current) return;
-
         const loadFromUrl = async () => {
             // Check if we have URL params to load
             if (!urlSku && !urlPreset) {
-                // If we initialized as true but no SKU/preset (e.g. cleared), reset flag
                 if (isDeepLinking) setIsDeepLinking(false);
+                // If we are undergoing a manual load, ignore empty URL params briefly
+                if (isInternalLoading.current) return;
+
+                // If we had a preset/event but URL is now empty (e.g. user hit back to home), clear it
+                if (event || urlPresetRef.current) {
+                    handleClearAll();
+                }
+                urlPresetRef.current = null;
                 return;
             }
 
+            // Check if URL matches current state to avoid redundant loads
+            const currentSku = event?.sku;
+            const isPresetChange = urlPreset !== urlPresetRef.current;
+            const isSkuChange = urlSku && urlSku !== currentSku;
+
+            if (!isPresetChange && !isSkuChange) return;
+
             hasDeepLinked.current = true;
+            urlPresetRef.current = urlPreset;
 
             try {
                 if (urlPreset) {
@@ -264,7 +280,7 @@ function Viewer() {
         };
 
         loadFromUrl();
-    }, []); // Only run on mount
+    }, [urlSku, urlPreset, presets.length]);
 
     // Sync URL params when event changes
     useEffect(() => {
@@ -273,15 +289,16 @@ function Viewer() {
         }
 
         if (event && event.sku) {
-            setUrlSku(event.sku);
+            // Only sync SKU if NOT in preset mode to keep URL clean
+            if (!urlPreset) setUrlSku(event.sku);
         } else {
             setUrlSku(null);
         }
-    }, [event, setUrlSku, isDeepLinking]);
+    }, [event, setUrlSku, isDeepLinking, urlPreset]);
 
     // Sync URL params when streams change
     useEffect(() => {
-        if (isDeepLinking) {
+        if (isDeepLinking || urlPreset) {
             return;
         }
 
@@ -498,9 +515,12 @@ function Viewer() {
             return;
         }
 
+        isInternalLoading.current = true;
         setEventLoading(true);
         setError('');
         setNoWebcastsFound(false);
+        setUrlPreset(null); // Clear preset on manual search
+        urlPresetRef.current = null; // Sync ref immediately
 
         try {
             const skuMatch = eventUrl.match(/(RE-[A-Z0-9]+-\d{2}-\d{4})/);
@@ -508,6 +528,7 @@ function Viewer() {
                 throw new Error('Invalid RobotEvents URL. Could not find SKU.');
             }
             const sku = skuMatch[1];
+            setUrlSku(sku); // Set SKU immediately
             const foundEvent = await getEventBySku(sku);
 
             // Only reinitialize streams if it's a different event or no streams exist
@@ -549,6 +570,7 @@ function Viewer() {
         } finally {
             setEventLoading(false);
             if (!error) setIsEventSearchCollapsed(true);
+            setTimeout(() => { isInternalLoading.current = false; }, 1000);
         }
     };
 
@@ -610,6 +632,7 @@ function Viewer() {
 
 
     const handleLoadFromHistory = async (historyEntry) => {
+        isInternalLoading.current = true;
         // Reconstruct event object
         let reconstructedEvent = {
             id: historyEntry.eventId,
@@ -621,6 +644,11 @@ function Viewer() {
             season: historyEntry.eventSeason,
             divisions: historyEntry.eventDivisions
         };
+
+        setUrlPreset(null);
+        urlPresetRef.current = null; // Sync ref immediately
+        setUrlSku(historyEntry.eventSku); // Set SKU immediately
+        setSelectedPresetSku('');
 
         // If program, season, or divisions is missing (legacy history), fetch full event details
         if ((!reconstructedEvent.program || !reconstructedEvent.season || !reconstructedEvent.divisions) && reconstructedEvent.sku) {
@@ -643,29 +671,60 @@ function Viewer() {
         setEvent(reconstructedEvent);
         setEventUrl(`https://www.robotevents.com/${historyEntry.eventSku}.html`);
 
-        // Restore streams
-        const restoredStreams = historyEntry.streams.map((s, idx) => ({
-            id: `stream-day-${idx}`,
-            url: s.url || '',
-            videoId: s.videoId || null,
-            streamStartTime: s.streamStartTime || null,
-            dayIndex: s.dayIndex,
-            label: s.label,
-            date: s.date
-        }));
+        // If history has streams, restore them. Otherwise, initialize fresh ones.
+        if (historyEntry.streams && historyEntry.streams.length > 0) {
+            const restoredStreams = historyEntry.streams.map((s, idx) => ({
+                id: s.id || `stream-day-${idx}`,
+                url: s.url || '',
+                videoId: s.videoId || null,
+                streamStartTime: s.streamStartTime || null,
+                divisionId: s.divisionId || 1, // Fallback for legacy
+                dayIndex: s.dayIndex,
+                label: s.label,
+                date: s.date
+            }));
 
-        setStreams(restoredStreams);
-        if (restoredStreams.length > 0) {
-            setActiveStreamId(restoredStreams[0].id);
+            setStreams(restoredStreams);
+            if (restoredStreams.length > 0) {
+                setActiveStreamId(restoredStreams[0].id);
+            }
+
+            // Sync multi-division state
+            const divisions = reconstructedEvent.divisions && reconstructedEvent.divisions.length > 0
+                ? reconstructedEvent.divisions
+                : [{ id: 1, name: 'Default Division' }];
+            const isMultiDiv = divisions.length > 1;
+            setMultiDivisionMode(isMultiDiv);
+            setActiveDivisionId(divisions[0].id);
+        } else {
+            // No streams in history? Initialize them fresh for the event
+            initializeStreamsForEvent(reconstructedEvent);
         }
+
+        // Reset internal loading flag after a brief delay
+        setTimeout(() => { isInternalLoading.current = false; }, 1000);
     };
 
     const handleLoadPreset = async (preset) => {
+        isInternalLoading.current = true;
         setEventLoading(true);
         setError('');
         setNoWebcastsFound(false);
         setWebcastCandidates([]);
         setSelectedPresetSku(preset.sku);
+        setUrlPreset(preset.path); // Set preset mode in URL
+        urlPresetRef.current = preset.path; // Prevent reactive effect from re-loading
+        setUrlSku(null); // Clear SKU as it's redundant with preset
+
+        // Clear all stream-related params to keep URL clean for sharing
+        setUrlVid(null);
+        setUrlLive(null);
+        setUrlVid1(null);
+        setUrlVid2(null);
+        setUrlVid3(null);
+        setUrlLive1(null);
+        setUrlLive2(null);
+        setUrlLive3(null);
         try {
             const foundEvent = await getEventBySku(preset.sku);
             setEvent(foundEvent);
@@ -729,6 +788,7 @@ function Viewer() {
             setError('Failed to load preset: ' + err.message);
         } finally {
             setEventLoading(false);
+            setTimeout(() => { isInternalLoading.current = false; }, 1000);
         }
     };
 
@@ -907,6 +967,7 @@ function Viewer() {
         setActiveDivisionId(null);
 
         // Reset URL Parameters
+        setUrlPreset(null);
         setUrlSku(null);
         setUrlTeam(null);
         setUrlMatch(null);
@@ -1226,10 +1287,9 @@ function Viewer() {
                                                 onChange={(e) => {
                                                     const newUrl = e.target.value;
                                                     setEventUrl(newUrl);
-                                                    // If manual input doesn't match selected preset SKU, reset dropdown
-                                                    if (selectedPresetSku && !newUrl.includes(selectedPresetSku)) {
-                                                        setSelectedPresetSku('');
-                                                    }
+                                                    // If input changes, we are no longer strictly following the preset
+                                                    if (urlPreset) setUrlPreset(null);
+                                                    if (selectedPresetSku) setSelectedPresetSku('');
                                                 }}
                                                 placeholder="Paste RobotEvents URL..."
                                                 className="flex-1 bg-black border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:border-[#4FCEEC] focus:ring-1 focus:ring-[#4FCEEC] outline-none transition-all"
