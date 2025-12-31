@@ -100,6 +100,7 @@ function Viewer() {
 
     // Sync state
     const [syncMode, setSyncMode] = useState(false);
+    const [manualSyncConfirmed, setManualSyncConfirmed] = useState(false);
     const [selectedMatchId, setSelectedMatchId] = useState(null);
 
     // Matches Tab State
@@ -640,6 +641,13 @@ function Viewer() {
         }
     };
 
+    // Reset manual sync confirmation when switching streams
+    useEffect(() => {
+        if (syncMode && activeStreamId) {
+            setManualSyncConfirmed(false);
+        }
+    }, [activeStreamId, syncMode]);
+
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -1040,7 +1048,7 @@ function Viewer() {
         setSyncMode(false);
     };
 
-    const jumpToMatch = (match) => {
+    const jumpToMatch = async (match) => {
         // Find the appropriate stream for this match
         const matchStream = findStreamForMatch(match, streams, event?.start);
 
@@ -1049,16 +1057,17 @@ function Viewer() {
             return;
         }
 
-        // Pause the currently active player if switching streams
-        if (matchStream.id !== activeStreamId && activeStreamId) {
-            const currentPlayer = players[activeStreamId];
-            if (currentPlayer && typeof currentPlayer.pauseVideo === 'function') {
-                currentPlayer.pauseVideo();
-            }
-        }
-
-        // Switch to the correct stream if not already active
+        // Always update UI (division tabs) even if we block the actual jump
+        // This keeps the UI in sync with what the user is trying to view
         if (matchStream.id !== activeStreamId) {
+            // Pause the currently active player if switching streams
+            if (activeStreamId) {
+                const currentPlayer = players[activeStreamId];
+                if (currentPlayer && typeof currentPlayer.pauseVideo === 'function') {
+                    currentPlayer.pauseVideo();
+                }
+            }
+
             setActiveStreamId(matchStream.id);
             // Also switch division view if applicable to keep UI in sync
             if (matchStream.divisionId) {
@@ -1495,7 +1504,108 @@ function Viewer() {
 
                         </div>
 
-                        {/* Tab Navigation */}
+                        {/* Sync Control Bar */}
+                        {event && streams.length > 0 && (
+                            <div className="bg-black/30 border-y border-gray-800 py-1.5 px-3 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Sync Mode</span>
+                                    <div className="flex bg-gray-900 rounded-lg p-0.5">
+                                        <button
+                                            onClick={() => setSyncMode(false)}
+                                            className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all ${!syncMode
+                                                ? 'bg-gray-700 text-white shadow-sm'
+                                                : 'text-gray-500 hover:text-gray-300'
+                                                }`}
+                                        >
+                                            AUTO
+                                        </button>
+                                        <button
+                                            disabled
+                                            title="Coming Soon"
+                                            className="px-2 py-0.5 text-[10px] font-bold rounded-md transition-all text-gray-600 opacity-50 cursor-not-allowed"
+                                        >
+                                            MANUAL
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {syncMode && (
+                                    (() => {
+                                        // Find first match dynamically for the button label
+                                        const getFirstMatch = () => {
+                                            const activeStream = getActiveStream();
+                                            if (!activeStream) return null;
+                                            const targetDivId = activeStream.divisionId;
+                                            const targetDayIndex = activeStream.dayIndex;
+
+                                            // Use allMatches (entire event) instead of matches (filtered by selected team)
+                                            let relevantMatches = allMatches.length > 0 ? allMatches : matches;
+                                            if (targetDivId && event.divisions && event.divisions.length > 1) {
+                                                relevantMatches = relevantMatches.filter(m => m.division.id === targetDivId);
+                                            }
+
+                                            if (relevantMatches.length === 0) return null;
+
+                                            const eventStart = new Date(event.start);
+                                            const streamDate = new Date(eventStart);
+                                            streamDate.setDate(eventStart.getDate() + targetDayIndex);
+                                            const streamDateStr = streamDate.toISOString().split('T')[0];
+
+                                            return relevantMatches
+                                                .filter(m => m.started && m.started.startsWith(streamDateStr))
+                                                .sort((a, b) => new Date(a.started) - new Date(b.started))[0];
+                                        };
+
+                                        const firstMatch = getFirstMatch();
+
+                                        const handleManualSync = () => {
+                                            const activeStream = getActiveStream();
+                                            const firstMatch = getFirstMatch();
+
+                                            if (activeStream && firstMatch) {
+                                                const player = players[activeStream.id];
+                                                if (player && typeof player.getCurrentTime === 'function') {
+                                                    const currentVidTime = player.getCurrentTime();
+                                                    const matchStartTimeMs = new Date(firstMatch.started).getTime();
+                                                    const calculatedStartTime = matchStartTimeMs - (currentVidTime * 1000);
+
+                                                    console.log("Manual Sync:", {
+                                                        firstMatch: firstMatch.name,
+                                                        matchStart: firstMatch.started,
+                                                        vidTime: currentVidTime,
+                                                        calcStart: new Date(calculatedStartTime).toISOString()
+                                                    });
+
+                                                    const updatedStreams = streams.map(s => {
+                                                        if (s.id === activeStream.id) {
+                                                            return { ...s, streamStartTime: calculatedStartTime };
+                                                        }
+                                                        return s;
+                                                    });
+                                                    setStreams(updatedStreams);
+                                                    setManualSyncConfirmed(true); // Enable jumping
+                                                    alert(`Synced to ${firstMatch.name}! All matches are now aligned.`);
+                                                } else {
+                                                    alert("Video player not ready.");
+                                                }
+                                            } else {
+                                                alert("Could not find a match to sync with.");
+                                            }
+                                        };
+
+                                        return (
+                                            <button
+                                                onClick={handleManualSync}
+                                                disabled={!firstMatch}
+                                                className="text-[10px] font-bold bg-[#4FCEEC] hover:bg-[#3db8d6] disabled:opacity-50 disabled:cursor-not-allowed text-black px-2 py-1 rounded transition-colors"
+                                            >
+                                                {firstMatch ? `SYNC TO ${firstMatch.name.toUpperCase()}` : 'NO MATCHES FOUND'}
+                                            </button>
+                                        );
+                                    })()
+                                )}
+                            </div>
+                        )}
                         <div className="flex gap-1 bg-gray-900/50 p-1 rounded-lg flex-shrink-0">
                             {/* Only show 'Find Team' tab if event is loaded OR it's been explicitly selected (though deprecated in no-event mode) */}
                             {event && (
@@ -1587,7 +1697,8 @@ function Viewer() {
                                                         <div className="flex items-center gap-2 text-[10px]">
                                                             {(() => {
                                                                 const syncedStreams = streams.filter(s => s.streamStartTime);
-                                                                const isSynced = syncedStreams.length > 0;
+                                                                // If manual mode but not confirmed, treat as NOT synced
+                                                                const isSynced = (syncMode && !manualSyncConfirmed) ? false : syncedStreams.length > 0;
                                                                 return (
                                                                     <>
                                                                         <div className={`w-1.5 h-1.5 rounded-full ${isSynced ? 'bg-[#4FCEEC] shadow-[0_0_8px_rgba(79,206,236,0.6)]' : 'bg-red-500'}`} />

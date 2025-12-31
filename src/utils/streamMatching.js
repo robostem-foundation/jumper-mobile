@@ -58,19 +58,31 @@ export const findStreamForMatch = (match, streams, eventStartDate) => {
 
     const matchDay = getMatchDayIndex(matchStartTime, eventStartDate);
     const matchTimeMs = new Date(matchStartTime).getTime();
+    const matchDivisionId = match.division?.id;
 
     // Filter streams that have valid start times
     const streamsWithStartTime = streams.filter(stream => stream.streamStartTime);
 
     if (streamsWithStartTime.length === 0) return null;
 
-    // Prefer streams from the same day, but accept any stream if needed
-    const sameDayStreams = streamsWithStartTime.filter(stream =>
-        stream.dayIndex === null || stream.dayIndex === matchDay
+    // First priority: filter by division if the match has a division ID
+    let candidateStreams = streamsWithStartTime;
+    if (matchDivisionId) {
+        const divisionStreams = streamsWithStartTime.filter(stream =>
+            stream.divisionId === matchDivisionId || !stream.divisionId
+        );
+        if (divisionStreams.length > 0) {
+            candidateStreams = divisionStreams;
+        }
+    }
+
+    // Second priority: prefer streams from the same day
+    const sameDayStreams = candidateStreams.filter(stream =>
+        stream.dayIndex === null || stream.dayIndex === undefined || stream.dayIndex === matchDay
     );
 
     // Use same-day streams if available, otherwise use any available stream
-    const candidateStreams = sameDayStreams.length > 0 ? sameDayStreams : streamsWithStartTime;
+    candidateStreams = sameDayStreams.length > 0 ? sameDayStreams : candidateStreams;
 
     // Filter to only streams that started before the match
     const validStreams = candidateStreams.filter(stream =>
