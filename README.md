@@ -33,12 +33,13 @@ Manual syncing tools are included to help keep things accurate when streams star
 
 The interface is designed to stay fast and simple while keeping everything in one place.
 
-## Technology Stack
+## Stack
 
-* **Frontend**: React, Vite, Tailwind CSS
-* **Routing**: React Router
-* **URL State Management**: nuqs
-* **Deployment**: Vercel
+* **Frontend**: React, Vite, Tailwind CSS  
+  *Frontend was created with the assistance of AI.*
+* **Routing**: React Router  
+* **URL State Management**: nuqs  
+* **Deployment**: Vercel  
 
 ### Backend and Data
 
