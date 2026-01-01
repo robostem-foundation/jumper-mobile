@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Lock, Plus, Trash2, Save, Copy, Check, ExternalLink, Edit2, X, ChevronDown, ChevronRight, LayoutList, RefreshCw, Layout } from 'lucide-react';
+import { Lock, Plus, Trash2, Save, Copy, Check, ExternalLink, Edit2, X, ChevronDown, ChevronRight, LayoutList, RefreshCw, Layout, AlertCircle } from 'lucide-react';
 import { getEventBySku } from '../services/robotevents';
 import { calculateEventDays } from '../utils/streamMatching';
 import { extractVideoId } from '../services/youtube';
@@ -36,6 +36,7 @@ function Admin() {
     const [isFetchingEvent, setIsFetchingEvent] = useState(false);
     const [activeDivisionTab, setActiveDivisionTab] = useState(null);
     const [eventDivisions, setEventDivisions] = useState([]);
+    const [divisionMismatchWarning, setDivisionMismatchWarning] = useState(null);
 
     useEffect(() => {
         const sessionAuth = sessionStorage.getItem('adminAuth');
@@ -83,29 +84,68 @@ function Admin() {
         }
 
         setIsFetchingEvent(true);
+        setDivisionMismatchWarning(null);
         try {
             const event = await getEventBySku(newRoute.sku);
             const days = calculateEventDays(event.start, event.end);
-            const divisions = event.divisions && event.divisions.length > 0
+            const apiDivisions = event.divisions && event.divisions.length > 0
                 ? event.divisions
                 : [{ id: 1, name: 'Default' }];
 
-            setEventDivisions(divisions);
-            setActiveDivisionTab(divisions[0].id);
+            // Check for division mismatch if we already have manual divisions
+            if (eventDivisions.length > 0 && apiDivisions.length > 0) {
+                const manualDivNames = eventDivisions.map(d => d.name.toLowerCase().trim());
+                const apiDivNames = apiDivisions.map(d => d.name.toLowerCase().trim());
+
+                // Check if counts differ or names don't match
+                const countMismatch = manualDivNames.length !== apiDivNames.length;
+                const nameMismatch = !manualDivNames.every((name, idx) =>
+                    apiDivNames.some(apiName => apiName.includes(name) || name.includes(apiName))
+                );
+
+                if (countMismatch || nameMismatch) {
+                    setDivisionMismatchWarning({
+                        manual: eventDivisions.map(d => d.name),
+                        api: apiDivisions.map(d => d.name),
+                        message: `Division mismatch detected! Your manual divisions (${eventDivisions.map(d => d.name).join(', ')}) don't match the API divisions (${apiDivisions.map(d => d.name).join(', ')}). Stream data may need to be remapped.`
+                    });
+                }
+            }
+
+            // Merge API divisions with any existing stream data
+            // Try to match by name similarity or position
+            const mergedMultiStreams = {};
+            apiDivisions.forEach((apiDiv, apiIdx) => {
+                // Try to find matching manual division by name
+                const matchingManual = eventDivisions.find(d =>
+                    d.name.toLowerCase().trim() === apiDiv.name.toLowerCase().trim() ||
+                    d.name.toLowerCase().includes(apiDiv.name.toLowerCase()) ||
+                    apiDiv.name.toLowerCase().includes(d.name.toLowerCase())
+                );
+
+                // Try by position as fallback
+                const positionMatch = eventDivisions[apiIdx];
+
+                // Get existing streams: first try name match, then position match, then blank
+                const existingStreams = matchingManual
+                    ? (newRoute.multiStreams?.[matchingManual.id] || [])
+                    : (positionMatch ? (newRoute.multiStreams?.[positionMatch.id] || []) : []);
+
+                // Also check legacy single-division format
+                const legacyStreams = apiIdx === 0 ? newRoute.streams : [];
+                const finalExisting = existingStreams.length > 0 ? existingStreams : legacyStreams;
+
+                mergedMultiStreams[apiDiv.id] = Array(days).fill('').map((_, i) => finalExisting[i] || '');
+            });
+
+            setEventDivisions(apiDivisions);
+            setActiveDivisionTab(apiDivisions[0].id);
 
             setNewRoute(prev => ({
                 ...prev,
-                label: event.name, // Always update label on auto-fill
-                sku: event.sku,    // Ensure SKU is clean (if it was a URL)
-                // Initialize/Update streams structure
-                // We'll store it as an object mapping divisionId to array of day vids
-                multiStreams: divisions.reduce((acc, div) => {
-                    // Try to preserve existing vids if we were already editing this SKU
-                    const existing = prev.multiStreams?.[div.id] || (div.id === 1 ? prev.streams : []);
-                    const newVids = Array(days).fill('').map((_, i) => existing[i] || '');
-                    acc[div.id] = newVids;
-                    return acc;
-                }, {})
+                label: event.name,
+                sku: event.sku,
+                multiStreams: mergedMultiStreams
             }));
 
         } catch (err) {
@@ -201,6 +241,8 @@ function Admin() {
         }
 
         let streams;
+        let divisionNames = null;
+
         if (eventDivisions.length > 1 && newRoute.multiStreams) {
             // Save as object of divisionId -> array of vids
             streams = { ...newRoute.multiStreams };
@@ -212,6 +254,24 @@ function Admin() {
                 }
                 streams[divId] = arr;
             });
+
+            // Save division names for matching later
+            // Format: { divisionId: divisionName, ... }
+            divisionNames = eventDivisions.reduce((acc, div) => {
+                acc[div.id] = div.name;
+                return acc;
+            }, {});
+        } else if (eventDivisions.length === 1 && newRoute.multiStreams) {
+            // Single manual division - still save with multiStreams format
+            streams = { ...newRoute.multiStreams };
+            Object.keys(streams).forEach(divId => {
+                const arr = [...streams[divId]];
+                while (arr.length > 1 && arr[arr.length - 1].trim() === '') {
+                    arr.pop();
+                }
+                streams[divId] = arr;
+            });
+            divisionNames = { [eventDivisions[0].id]: eventDivisions[0].name };
         } else {
             // Trim trailing empty streams
             streams = [...newRoute.streams];
@@ -224,7 +284,8 @@ function Admin() {
             label: newRoute.label,
             path: newRoute.path,
             sku: newRoute.sku,
-            streams: streams
+            streams: streams,
+            ...(divisionNames && { divisionNames })
         };
 
         let updatedRoutes;
@@ -237,11 +298,13 @@ function Admin() {
 
         setRoutes(updatedRoutes);
         handleAutoSave(updatedRoutes);
+        setDivisionMismatchWarning(null);
         resetForm();
     };
 
     const startEdit = (index) => {
         setEditingIndex(index);
+        setDivisionMismatchWarning(null);
         const route = routes[index];
         const isMulti = !Array.isArray(route.streams) && typeof route.streams === 'object';
 
@@ -255,7 +318,13 @@ function Admin() {
 
         if (isMulti) {
             const divIds = Object.keys(route.streams).map(id => parseInt(id));
-            setEventDivisions(divIds.map(id => ({ id, name: `Division ${id}` })));
+            // Use saved divisionNames if available, otherwise fallback to "Division {id}"
+            const divisionNames = route.divisionNames || {};
+            setEventDivisions(divIds.map(id => ({
+                id,
+                name: divisionNames[id] || `Division ${id}`,
+                manual: !!divisionNames[id] // Mark as manual if we had a saved name
+            })));
             setActiveDivisionTab(divIds[0]);
         } else {
             setEventDivisions([]);
@@ -268,6 +337,7 @@ function Admin() {
         setEditingIndex(null);
         setEventDivisions([]);
         setActiveDivisionTab(null);
+        setDivisionMismatchWarning(null);
         setNewRoute({
             label: '',
             path: '',
@@ -507,22 +577,34 @@ function Admin() {
                                     </div>
 
                                     {eventDivisions.length > 0 && (
-                                        <div className="flex flex-wrap gap-2">
+                                        <div className="space-y-2">
                                             {eventDivisions.map((div) => (
                                                 <div
                                                     key={div.id}
-                                                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${activeDivisionTab === div.id
-                                                        ? 'bg-[#4FCEEC]/20 text-[#4FCEEC] border border-[#4FCEEC]/50'
-                                                        : 'bg-gray-800 text-gray-400 border border-gray-700'
+                                                    className={`flex items-center gap-2 px-2 py-1.5 rounded transition-all ${activeDivisionTab === div.id
+                                                        ? 'bg-[#4FCEEC]/20 border border-[#4FCEEC]/50'
+                                                        : 'bg-gray-800 border border-gray-700'
                                                         }`}
                                                 >
                                                     <button
                                                         onClick={() => setActiveDivisionTab(div.id)}
-                                                        className="flex items-center gap-1"
+                                                        className="flex-shrink-0"
                                                     >
-                                                        <Layout className="w-3 h-3" />
-                                                        <span>{div.name}</span>
+                                                        <Layout className={`w-3 h-3 ${activeDivisionTab === div.id ? 'text-[#4FCEEC]' : 'text-gray-500'}`} />
                                                     </button>
+                                                    <input
+                                                        type="text"
+                                                        value={div.name}
+                                                        onChange={(e) => {
+                                                            setEventDivisions(prev => prev.map(d =>
+                                                                d.id === div.id ? { ...d, name: e.target.value } : d
+                                                            ));
+                                                        }}
+                                                        onClick={() => setActiveDivisionTab(div.id)}
+                                                        className={`flex-1 bg-transparent border-none outline-none text-[11px] font-semibold ${activeDivisionTab === div.id ? 'text-[#4FCEEC]' : 'text-gray-400'
+                                                            } focus:text-white placeholder-gray-600`}
+                                                        placeholder="Division name..."
+                                                    />
                                                     {div.manual && eventDivisions.length > 1 && (
                                                         <button
                                                             onClick={(e) => {
@@ -544,7 +626,7 @@ function Admin() {
                                                                     }
                                                                 }
                                                             }}
-                                                            className="ml-1 text-red-400 hover:text-red-300"
+                                                            className="flex-shrink-0 text-red-400 hover:text-red-300"
                                                             title="Remove division"
                                                         >
                                                             <X className="w-3 h-3" />
@@ -559,6 +641,37 @@ function Admin() {
                                         <p className="text-[10px] text-gray-600 italic">No divisions set. Click "Add Division" to manually configure, or use "Auto-Fill" to detect from RobotEvents.</p>
                                     )}
                                 </div>
+
+                                {/* Division Mismatch Warning */}
+                                {divisionMismatchWarning && (
+                                    <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
+                                        <div className="flex items-start gap-2">
+                                            <AlertCircle className="w-4 h-4 text-yellow-500 flex-shrink-0 mt-0.5" />
+                                            <div className="flex-1">
+                                                <p className="text-[11px] font-bold text-yellow-500 mb-1">Division Mismatch Detected</p>
+                                                <p className="text-[10px] text-yellow-400/80 mb-2">
+                                                    Your preset divisions don't match the API. Stream data has been auto-remapped by position, but you may need to verify.
+                                                </p>
+                                                <div className="flex gap-4 text-[10px]">
+                                                    <div>
+                                                        <span className="text-gray-500">Your names:</span>
+                                                        <span className="text-gray-300 ml-1">{divisionMismatchWarning.manual.join(', ')}</span>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-gray-500">API names:</span>
+                                                        <span className="text-gray-300 ml-1">{divisionMismatchWarning.api.join(', ')}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setDivisionMismatchWarning(null)}
+                                                className="text-gray-500 hover:text-white"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
 
                                 <div className="space-y-2">
                                     {(eventDivisions.length > 1 ? (newRoute.multiStreams?.[activeDivisionTab] || []) : newRoute.streams).map((stream, idx) => (

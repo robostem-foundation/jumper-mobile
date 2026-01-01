@@ -836,6 +836,56 @@ function Viewer() {
 
             const newStreams = [];
 
+            // Check if we need to remap divisions (preset has divisionNames that don't match API)
+            const presetDivisionNames = preset.divisionNames || null;
+            let divisionMapping = null; // Map from API divisionId to preset divisionId
+
+            if (presetDivisionNames && preset.streams && typeof preset.streams === 'object' && !Array.isArray(preset.streams)) {
+                const presetDivIds = Object.keys(presetDivisionNames);
+                const apiDivNames = divisions.map(d => d.name.toLowerCase().trim());
+
+                // Check if we need remapping (IDs don't directly match)
+                const needsRemapping = divisions.some(apiDiv => !preset.streams[apiDiv.id]);
+
+                if (needsRemapping && presetDivIds.length > 0) {
+                    console.log('[PRESET LOAD] Division remapping needed', { presetDivisionNames, apiDivisions: divisions.map(d => ({ id: d.id, name: d.name })) });
+
+                    divisionMapping = {};
+
+                    divisions.forEach((apiDiv, apiIdx) => {
+                        // Try to find matching preset division by name similarity
+                        let matchingPresetId = null;
+
+                        for (const presetDivId of presetDivIds) {
+                            const presetName = presetDivisionNames[presetDivId]?.toLowerCase().trim() || '';
+                            const apiName = apiDiv.name.toLowerCase().trim();
+
+                            // Check for exact match, contains, or is contained by
+                            if (presetName === apiName ||
+                                presetName.includes(apiName) ||
+                                apiName.includes(presetName) ||
+                                // Also check without "Division" prefix
+                                presetName.replace('division', '').trim() === apiName.replace('division', '').trim()) {
+                                matchingPresetId = presetDivId;
+                                break;
+                            }
+                        }
+
+                        // Fallback to position-based matching
+                        if (!matchingPresetId && presetDivIds[apiIdx]) {
+                            matchingPresetId = presetDivIds[apiIdx];
+                            console.log(`[PRESET LOAD] Using position-based match for ${apiDiv.name}: presetId=${matchingPresetId}`);
+                        }
+
+                        if (matchingPresetId) {
+                            divisionMapping[apiDiv.id] = matchingPresetId;
+                        }
+                    });
+
+                    console.log('[PRESET LOAD] Division mapping result:', divisionMapping);
+                }
+            }
+
             divisions.forEach(division => {
                 for (let i = 0; i < days; i++) {
                     const eventStartDate = parseCalendarDate(foundEvent.start);
@@ -849,7 +899,14 @@ function Viewer() {
                         const isFirstDivision = division.id === (foundEvent.divisions?.[0]?.id || 1);
                         presetVideoId = (isFirstDivision) ? (preset.streams[i] || null) : null;
                     } else if (preset.streams && typeof preset.streams === 'object') {
-                        const divStreams = preset.streams[division.id];
+                        // Try direct ID match first
+                        let divStreams = preset.streams[division.id];
+
+                        // If no direct match and we have a mapping, use it
+                        if (!divStreams && divisionMapping && divisionMapping[division.id]) {
+                            divStreams = preset.streams[divisionMapping[division.id]];
+                        }
+
                         presetVideoId = divStreams ? (divStreams[i] || null) : null;
                     }
 
