@@ -458,6 +458,108 @@ function Admin() {
                                         </div>
                                     )}
                                 </div>
+
+                                {/* Manual Division Controls */}
+                                <div className="mb-3 p-3 bg-gray-950 rounded-lg border border-gray-800">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">Divisions</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] text-gray-600">{eventDivisions.length} division{eventDivisions.length !== 1 ? 's' : ''}</span>
+                                            <button
+                                                onClick={() => {
+                                                    const newDivId = eventDivisions.length > 0
+                                                        ? Math.max(...eventDivisions.map(d => d.id)) + 1
+                                                        : 1;
+                                                    const newDiv = { id: newDivId, name: `Division ${newDivId}`, manual: true };
+                                                    const updatedDivisions = [...eventDivisions, newDiv];
+                                                    setEventDivisions(updatedDivisions);
+
+                                                    // Initialize streams for the new division
+                                                    if (eventDivisions.length === 0) {
+                                                        // First division: migrate existing streams array to multiStreams
+                                                        const existingStreams = newRoute.streams.length > 0 ? newRoute.streams : [''];
+                                                        setNewRoute(prev => ({
+                                                            ...prev,
+                                                            multiStreams: {
+                                                                [newDivId]: existingStreams
+                                                            }
+                                                        }));
+                                                    } else {
+                                                        // Additional division: copy structure from first division
+                                                        const currentStreams = newRoute.multiStreams || {};
+                                                        const defaultDayCount = currentStreams[eventDivisions[0]?.id]?.length || 1;
+                                                        setNewRoute(prev => ({
+                                                            ...prev,
+                                                            multiStreams: {
+                                                                ...prev.multiStreams,
+                                                                [newDivId]: Array(defaultDayCount).fill('')
+                                                            }
+                                                        }));
+                                                    }
+
+                                                    setActiveDivisionTab(newDivId);
+                                                }}
+                                                className="px-2 py-1 bg-gray-800 hover:bg-gray-700 text-[10px] text-[#4FCEEC] font-bold rounded border border-gray-700 transition-colors flex items-center gap-1"
+                                            >
+                                                <Plus className="w-3 h-3" /> Add Division
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {eventDivisions.length > 0 && (
+                                        <div className="flex flex-wrap gap-2">
+                                            {eventDivisions.map((div) => (
+                                                <div
+                                                    key={div.id}
+                                                    className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${activeDivisionTab === div.id
+                                                        ? 'bg-[#4FCEEC]/20 text-[#4FCEEC] border border-[#4FCEEC]/50'
+                                                        : 'bg-gray-800 text-gray-400 border border-gray-700'
+                                                        }`}
+                                                >
+                                                    <button
+                                                        onClick={() => setActiveDivisionTab(div.id)}
+                                                        className="flex items-center gap-1"
+                                                    >
+                                                        <Layout className="w-3 h-3" />
+                                                        <span>{div.name}</span>
+                                                    </button>
+                                                    {div.manual && eventDivisions.length > 1 && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                if (confirm(`Remove ${div.name}?`)) {
+                                                                    const updatedDivisions = eventDivisions.filter(d => d.id !== div.id);
+                                                                    setEventDivisions(updatedDivisions);
+
+                                                                    // Remove streams for this division
+                                                                    const { [div.id]: removed, ...remainingStreams } = newRoute.multiStreams || {};
+                                                                    setNewRoute(prev => ({
+                                                                        ...prev,
+                                                                        multiStreams: remainingStreams
+                                                                    }));
+
+                                                                    // Switch to another division if this was active
+                                                                    if (activeDivisionTab === div.id && updatedDivisions.length > 0) {
+                                                                        setActiveDivisionTab(updatedDivisions[0].id);
+                                                                    }
+                                                                }
+                                                            }}
+                                                            className="ml-1 text-red-400 hover:text-red-300"
+                                                            title="Remove division"
+                                                        >
+                                                            <X className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {eventDivisions.length === 0 && (
+                                        <p className="text-[10px] text-gray-600 italic">No divisions set. Click "Add Division" to manually configure, or use "Auto-Fill" to detect from RobotEvents.</p>
+                                    )}
+                                </div>
+
                                 <div className="space-y-2">
                                     {(eventDivisions.length > 1 ? (newRoute.multiStreams?.[activeDivisionTab] || []) : newRoute.streams).map((stream, idx) => (
                                         <div key={idx} className="flex gap-2">
