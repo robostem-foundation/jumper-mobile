@@ -19,7 +19,7 @@ import * as cheerio from 'cheerio';
  */
 
 export const config = {
-    runtime: 'nodejs20.x', // Use Node.js runtime for KV support
+    runtime: 'nodejs', // Use Node.js runtime for KV support
     maxDuration: 10, // 10 second timeout
 };
 
