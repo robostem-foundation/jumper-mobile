@@ -113,8 +113,9 @@ export default async function handler(req, res) {
             console.log(`[YOUTUBE] Found ${channelVideos.length} videos from channels`);
         }
 
+        let allVideos = [...directVideos, ...channelVideos];
+
         // 6. Combine and normalize streams
-        const allVideos = [...directVideos, ...channelVideos];
         const streams = normalizeStreams(allVideos, eventStart, eventEnd, divisions);
 
         console.log(`[RESULT] ${streams.length} streams normalized`);
@@ -148,97 +149,157 @@ async function scrapeRobotEvents(url) {
     const links = [];
 
     try {
-        // Try direct fetch first with a realistic browser User-Agent
-        let html = null;
+        console.log(`[SCRAPE] Fetching ${url}`);
 
+        // Try direct fetch with Googlebot UA and Referer
+        let html = null;
         try {
             const response = await fetch(url, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Upgrade-Insecure-Requests': '1',
+                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                    'Referer': 'https://www.google.com/',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5'
                 }
             });
 
             if (response.ok) {
                 html = await response.text();
-                console.log(`[SCRAPE] Direct fetch successful, got ${html.length} bytes`);
+                if (html.includes('id="challenge-running"') || html.includes('Just a moment...')) {
+                    console.log(`[SCRAPE] Direct fetch blocked by security challenge`);
+                    html = null;
+                } else {
+                    console.log(`[SCRAPE] Direct fetch successful (Googlebot), got ${html.length} bytes`);
+                }
             } else {
-                console.log(`[SCRAPE] Direct fetch failed with ${response.status}, trying CORS proxy...`);
+                console.log(`[SCRAPE] Direct fetch failed with ${response.status}`);
             }
         } catch (directError) {
-            console.log(`[SCRAPE] Direct fetch error: ${directError.message}, trying CORS proxy...`);
+            console.log(`[SCRAPE] Direct fetch error: ${directError.message}`);
+        }
+
+        if (!html) {
+            // Second try: Standard User Agent
+            try {
+                const response2 = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                    }
+                });
+                if (response2.ok) {
+                    html = await response2.text();
+                    console.log(`[SCRAPE] Second try successful, got ${html.length} bytes`);
+                }
+            } catch (e) {
+                console.log(`[SCRAPE] Second try failed: ${e.message}`);
+            }
         }
 
         // Fallback to CORS proxy if direct fetch fails
         if (!html) {
+            console.log(`[SCRAPE] Trying CORS proxy fallback...`);
             const corsProxy = 'https://corsproxy.io/?';
             const proxyUrl = `${corsProxy}${encodeURIComponent(url)}`;
 
-            const proxyResponse = await fetch(proxyUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            try {
+                const proxyResponse = await fetch(proxyUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    }
+                });
+
+                if (proxyResponse.ok) {
+                    html = await proxyResponse.text();
+                    console.log(`[SCRAPE] CORS proxy successful, got ${html.length} bytes`);
+                } else {
+                    console.error(`[SCRAPE] CORS proxy failed with ${proxyResponse.status}`);
                 }
-            });
-
-            if (!proxyResponse.ok) {
-                console.error(`[SCRAPE] CORS proxy also failed with ${proxyResponse.status}`);
-                return links;
+            } catch (proxyError) {
+                console.error(`[SCRAPE] CORS proxy error: ${proxyError.message}`);
             }
+        }
 
-            html = await proxyResponse.text();
-            console.log(`[SCRAPE] CORS proxy successful, got ${html.length} bytes`);
+        if (!html) {
+            console.error('[SCRAPE] All fetch methods failed');
+            return links;
         }
 
         const $ = cheerio.load(html);
+        const seen = new Set();
 
-        // Look for webcast links in various places
+        // Strategy 1: Look for explicit links in likely containers
         const selectors = [
             '#webcast a',
-            '.tab-content a[href*="youtube"]',
-            '.tab-content a[href*="youtu.be"]',
-            'a[href*="youtube.com/live"]',
-            'a[href*="youtube.com/watch"]',
-            'a[href*="youtube.com/@"]',
-            'a[href*="youtube.com/channel"]',
-            'a[href*="youtube.com/c/"]',
-            // Also check for any YouTube link on the page
-            'a[href*="youtube"]',
+            '.tab-content a',
+            'div[id*="webcast"] a',
+            'a[href*="youtube.com"]',
             'a[href*="youtu.be"]'
         ];
 
-        const seen = new Set();
+        // Strategy 2: Scan full body text for http links if we're desperate
+        // (Regex extraction from full HTML)
+        const youtubeRegex = /(https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|live\/|@|channel\/|c\/)|youtu\.be\/)[a-zA-Z0-9_-]+)/g;
+        const bodyText = $('body').html() || '';
+        const regexMatches = bodyText.match(youtubeRegex) || [];
+
+        for (const matchUrl of regexMatches) {
+            if (!seen.has(matchUrl)) {
+                seen.add(matchUrl);
+                links.push({
+                    url: matchUrl,
+                    label: 'Extracted from text',
+                    divisionHint: null // Hard to determine context from raw regex
+                });
+                console.log(`[SCRAPE] Found link via regex: ${matchUrl}`);
+            }
+        }
 
         for (const selector of selectors) {
             $(selector).each((_, el) => {
                 const href = $(el).attr('href');
-                if (href && !seen.has(href) && (href.includes('youtube') || href.includes('youtu.be'))) {
-                    seen.add(href);
+                if (href && (href.includes('youtube.com') || href.includes('youtu.be'))) {
+                    // Start clean URL (remove query params other than v if possible, generally keep it simple)
 
-                    // Try to extract division info from surrounding text
-                    const parentText = $(el).parent().text().toLowerCase();
-                    const grandparentText = $(el).parent().parent().text().toLowerCase();
-                    const labelText = $(el).text().trim();
+                    if (!seen.has(href)) {
+                        seen.add(href);
 
-                    let divisionHint = null;
-                    // Look for division patterns like "Division A", "Div 1", etc.
-                    const divMatch = parentText.match(/division\s*([a-z0-9]+)/i) ||
-                        grandparentText.match(/division\s*([a-z0-9]+)/i) ||
-                        labelText.match(/division\s*([a-z0-9]+)/i);
-                    if (divMatch) {
-                        divisionHint = divMatch[1].toUpperCase();
+                        // Try to extract division info from surrounding text
+                        const parentText = $(el).parent().text().toLowerCase();
+                        const grandparentText = $(el).parent().parent().text().toLowerCase();
+                        const labelText = $(el).text().trim();
+
+                        let divisionHint = null;
+                        // Look for division patterns like "Division A", "Div 1", etc.
+                        const divMatch = parentText.match(/division\s*([a-z0-9]+)/i) ||
+                            grandparentText.match(/division\s*([a-z0-9]+)/i) ||
+                            labelText.match(/division\s*([a-z0-9]+)/i);
+
+                        // Also look for "High School" or "Middle School" as division proxies
+                        if (!divMatch) {
+                            if (parentText.includes('high school') || labelText.match(/hs/i)) divisionHint = "HS";
+                            else if (parentText.includes('middle school') || labelText.match(/ms/i)) divisionHint = "MS";
+                        }
+
+                        if (divMatch) {
+                            divisionHint = divMatch[1].toUpperCase();
+                        }
+
+                        console.log(`[SCRAPE] Found link via selector: ${href} (division hint: ${divisionHint})`);
+
+                        // Update or add. If we found via regex before, now we have better context (divisionHint)
+                        const existingIdx = links.findIndex(l => l.url === href);
+                        if (existingIdx !== -1) {
+                            links[existingIdx].divisionHint = divisionHint;
+                            links[existingIdx].label = labelText || links[existingIdx].label;
+                        } else {
+                            links.push({
+                                url: href,
+                                label: labelText || 'Webcast Link',
+                                divisionHint
+                            });
+                        }
                     }
-
-                    console.log(`[SCRAPE] Found link: ${href} (division hint: ${divisionHint})`);
-
-                    links.push({
-                        url: href,
-                        label: labelText,
-                        divisionHint
-                    });
                 }
             });
         }
@@ -464,4 +525,67 @@ function normalizeStreams(videos, eventStart, eventEnd, divisions) {
 function formatDate(date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return `${months[date.getMonth()]} ${date.getDate()}`;
+}
+
+async function fetchEventDetails(sku, apiKey) {
+    try {
+        const response = await fetch(`https://www.robotevents.com/api/v2/events?sku[]=${sku}`, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) return null;
+
+        const data = await response.json();
+        return data.data?.[0] || null;
+    } catch (e) {
+        console.error('Error fetching event details:', e);
+        return null;
+    }
+}
+
+async function searchYoutubeByQuery(query, eventStart, eventEnd, apiKey) {
+    const videos = [];
+    try {
+        // Search for videos within the event window
+        const startDate = new Date(eventStart);
+        startDate.setDate(startDate.getDate() - 1);
+        const publishedAfter = startDate.toISOString();
+
+        const endDate = new Date(eventEnd);
+        endDate.setDate(endDate.getDate() + 1);
+        const publishedBefore = endDate.toISOString();
+
+        const searchUrl = `https://www.googleapis.com/youtube/v3/search?` +
+            `part=snippet&q=${encodeURIComponent(query)}&type=video` +
+            `&publishedAfter=${publishedAfter}&publishedBefore=${publishedBefore}` +
+            `&maxResults=5&key=${apiKey}`;
+
+        const res = await fetch(searchUrl);
+        const data = await res.json();
+
+        if (data.items) {
+            for (const item of data.items) {
+                // Filter out irrelevant results if possible (simple heuristic)
+                if (item.snippet.title.toLowerCase().includes('live') ||
+                    item.snippet.title.toLowerCase().includes('stream') ||
+                    item.snippet.title.toLowerCase().includes('day') ||
+                    item.snippet.title.toLowerCase().match(/v\drc/i)) {
+
+                    videos.push({
+                        videoId: item.id.videoId,
+                        label: item.snippet.title,
+                        publishedAt: item.snippet.publishedAt,
+                        divisionHint: extractDivisionFromTitle(item.snippet.title),
+                        isFallback: true
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error searching YouTube by query:', error);
+    }
+    return videos;
 }
