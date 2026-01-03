@@ -45,17 +45,22 @@ export default async function handler(req, res) {
     }
 
     const cacheKey = `stream_cache:${sku}`;
+    const skipCache = req.query.nocache === 'true' || req.query.nocache === '1';
 
     try {
-        // 1. Check cache first
-        const cachedData = await kv.get(cacheKey);
-        if (cachedData) {
-            console.log(`[CACHE HIT] ${sku}`);
-            return res.status(200).json({
-                streams: cachedData.streams || [],
-                cached: true,
-                cachedAt: cachedData.cachedAt
-            });
+        // 1. Check cache first (unless nocache is set)
+        if (!skipCache) {
+            const cachedData = await kv.get(cacheKey);
+            if (cachedData) {
+                console.log(`[CACHE HIT] ${sku}`);
+                return res.status(200).json({
+                    streams: cachedData.streams || [],
+                    cached: true,
+                    cachedAt: cachedData.cachedAt
+                });
+            }
+        } else {
+            console.log(`[CACHE SKIP] nocache parameter set`);
         }
 
         console.log(`[CACHE MISS] ${sku} - Scraping RobotEvents...`);
@@ -143,18 +148,51 @@ async function scrapeRobotEvents(url) {
     const links = [];
 
     try {
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; VEXStreamBot/1.0)'
-            }
-        });
+        // Try direct fetch first with a realistic browser User-Agent
+        let html = null;
 
-        if (!response.ok) {
-            console.error(`RobotEvents returned ${response.status}`);
-            return links;
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                }
+            });
+
+            if (response.ok) {
+                html = await response.text();
+                console.log(`[SCRAPE] Direct fetch successful, got ${html.length} bytes`);
+            } else {
+                console.log(`[SCRAPE] Direct fetch failed with ${response.status}, trying CORS proxy...`);
+            }
+        } catch (directError) {
+            console.log(`[SCRAPE] Direct fetch error: ${directError.message}, trying CORS proxy...`);
         }
 
-        const html = await response.text();
+        // Fallback to CORS proxy if direct fetch fails
+        if (!html) {
+            const corsProxy = 'https://corsproxy.io/?';
+            const proxyUrl = `${corsProxy}${encodeURIComponent(url)}`;
+
+            const proxyResponse = await fetch(proxyUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                }
+            });
+
+            if (!proxyResponse.ok) {
+                console.error(`[SCRAPE] CORS proxy also failed with ${proxyResponse.status}`);
+                return links;
+            }
+
+            html = await proxyResponse.text();
+            console.log(`[SCRAPE] CORS proxy successful, got ${html.length} bytes`);
+        }
+
         const $ = cheerio.load(html);
 
         // Look for webcast links in various places
@@ -166,7 +204,10 @@ async function scrapeRobotEvents(url) {
             'a[href*="youtube.com/watch"]',
             'a[href*="youtube.com/@"]',
             'a[href*="youtube.com/channel"]',
-            'a[href*="youtube.com/c/"]'
+            'a[href*="youtube.com/c/"]',
+            // Also check for any YouTube link on the page
+            'a[href*="youtube"]',
+            'a[href*="youtu.be"]'
         ];
 
         const seen = new Set();
@@ -174,20 +215,24 @@ async function scrapeRobotEvents(url) {
         for (const selector of selectors) {
             $(selector).each((_, el) => {
                 const href = $(el).attr('href');
-                if (href && !seen.has(href)) {
+                if (href && !seen.has(href) && (href.includes('youtube') || href.includes('youtu.be'))) {
                     seen.add(href);
 
                     // Try to extract division info from surrounding text
                     const parentText = $(el).parent().text().toLowerCase();
+                    const grandparentText = $(el).parent().parent().text().toLowerCase();
                     const labelText = $(el).text().trim();
 
                     let divisionHint = null;
                     // Look for division patterns like "Division A", "Div 1", etc.
                     const divMatch = parentText.match(/division\s*([a-z0-9]+)/i) ||
+                        grandparentText.match(/division\s*([a-z0-9]+)/i) ||
                         labelText.match(/division\s*([a-z0-9]+)/i);
                     if (divMatch) {
                         divisionHint = divMatch[1].toUpperCase();
                     }
+
+                    console.log(`[SCRAPE] Found link: ${href} (division hint: ${divisionHint})`);
 
                     links.push({
                         url: href,
