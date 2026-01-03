@@ -468,7 +468,7 @@ function Viewer() {
     // Webcast Detection Effect
     useEffect(() => {
         const detect = async () => {
-            if (!event || streams.some(s => s.videoId) || noWebcastsFound) return;
+            if (!event || streams.some(s => s.videoId) || noWebcastsFound || showStreamSuccess) return;
 
             // Prevent running if we just ran it (rudimentary check, or rely on state)
             // Actually, just check if we have candidates or if we've already marked as not found
