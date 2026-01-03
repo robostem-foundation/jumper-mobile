@@ -83,6 +83,7 @@ function Viewer() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [showEventHistory, setShowEventHistory] = useState(false);
     const [webcastCandidates, setWebcastCandidates] = useState([]);
+    const [showStreamSuccess, setShowStreamSuccess] = useState(false); // Popup state
     const [noWebcastsFound, setNoWebcastsFound] = useState(false);
 
     // URL search params for deep linking
@@ -142,13 +143,13 @@ function Viewer() {
     // Multi-stream support
     const [streams, setStreams] = useState([]);
     const [activeStreamId, setActiveStreamId] = useState(null);
-    const [players, setPlayers] = useState({});
+    const [players, setPlayers] = {};
 
     // Loading states
     const [eventLoading, setEventLoading] = useState(false);
     const [teamLoading, setTeamLoading] = useState(false);
     const [rankingsLoading, setRankingsLoading] = useState(false); // For TeamList
-    const [error, setError] = useState('');
+    const [error, setError] = useState(null);
 
     // Sync state
     const [syncMode, setSyncMode] = useState(false);
@@ -264,11 +265,10 @@ function Viewer() {
                     setEvent(foundEvent);
                     setEventUrl(`https://www.robotevents.com/${urlSku}.html`);
 
-                    // Initialize streams for the event
+                    // Initialize streams for the event (triggers popup and basic setup)
+                    let initializedStreams = await initializeStreamsForEvent(foundEvent);
+                    let newStreams = [...initializedStreams]; // Clone to safely apply overrides
                     const days = calculateEventDays(foundEvent.start, foundEvent.end);
-                    const divsForAuto = foundEvent.divisions && foundEvent.divisions.length > 0 ? foundEvent.divisions : [{ id: 1, name: 'Default Division' }];
-
-                    let newStreams = await detectOrFallbackStreams(foundEvent, divsForAuto);
 
                     // Override with URL params if present
                     newStreams.forEach(stream => {
@@ -547,6 +547,13 @@ function Viewer() {
 
         setStreams(newStreams);
 
+        // Check if we found any detected streams
+        const hasDetectedStreams = newStreams.some(s => s.videoId);
+        if (hasDetectedStreams) {
+            setShowStreamSuccess(true);
+            setTimeout(() => setShowStreamSuccess(false), 3000); // Hide after 3s
+        }
+
         // Auto-enable multi-division mode if more than 1 division exists
         const isMultiDiv = divisions.length > 1;
         setMultiDivisionMode(isMultiDiv);
@@ -555,6 +562,8 @@ function Viewer() {
         if (newStreams.length > 0) {
             setActiveStreamId(newStreams[0].id);
         }
+
+        return newStreams; // Return for caller
     };
 
     // Auto-switch active stream if current is empty and others have content
@@ -600,33 +609,41 @@ function Viewer() {
             if (isDifferentEvent || !hasExistingStreams) {
                 setEvent(foundEvent);
                 // Initialize streams based on event duration
-                // Initialize streams based on event duration
-                await initializeStreamsForEvent(foundEvent);
+                const initializedStreams = await initializeStreamsForEvent(foundEvent);
+
+                // Webcast detection (Official/Legacy)
+                const candidates = await findWebcastCandidates(foundEvent);
+
+                // Check if we successfully loaded streams via NEW method
+                const hasDetectedStreams = initializedStreams && initializedStreams.some(s => s.videoId);
+
+                if (candidates.length > 0) {
+                    setWebcastCandidates(candidates);
+                    // Auto-select first if only one direct video AND no detected streams
+                    const directVideos = candidates.filter(c => c.type === 'direct-video');
+                    if (directVideos.length === 1 && !hasDetectedStreams) {
+                        handleWebcastSelect(directVideos[0].videoId, directVideos[0].url, 'auto');
+                    }
+                } else {
+                    // Only show "No Webcasts" if BOTH official and new detection failed
+                    if (!hasDetectedStreams) {
+                        setNoWebcastsFound(true);
+                    }
+                    // Check cache (Legacy logic from lines 640+ would be here, but effectively redundant if detect-streams works)
+                }
             } else {
                 // Same event, just update event data without touching streams
                 setEvent(foundEvent);
             }
-
-            // Webcast detection
-            const candidates = await findWebcastCandidates(foundEvent);
-            if (candidates.length > 0) {
-                setWebcastCandidates(candidates);
-                // Auto-select first if only one direct video
-                const directVideos = candidates.filter(c => c.type === 'direct-video');
-                if (directVideos.length === 1) {
-                    handleWebcastSelect(directVideos[0].videoId, directVideos[0].url, 'auto');
-                }
-            } else {
-                setNoWebcastsFound(true);
-                // Check cache
-                const cached = getCachedWebcast(foundEvent.id);
-                if (cached) {
-                    // Populate first stream with cached URL
-                    setStreams(prev => prev.map((s, idx) =>
-                        idx === 0 ? { ...s, url: cached.url, videoId: cached.videoId } : s
-                    ));
-                }
+            // Check cache
+            const cached = getCachedWebcast(foundEvent.id);
+            if (cached) {
+                // Populate first stream with cached URL
+                setStreams(prev => prev.map((s, idx) =>
+                    idx === 0 ? { ...s, url: cached.url, videoId: cached.videoId } : s
+                ));
             }
+
 
         } catch (err) {
             setError(err.message);
@@ -1239,7 +1256,7 @@ function Viewer() {
         setTeamNumber('');
         setSelectedMatchId(null);
         setExpandedMatchId(null);
-        setError('');
+        setError(null);
         setIsEventSearchCollapsed(false);
         setNoWebcastsFound(false);
         setWebcastCandidates([]);
@@ -1346,17 +1363,19 @@ function Viewer() {
 
             {/* Error Display */}
             {error && (
-                <div className="max-w-[1600px] mx-auto mt-4 px-4 w-full flex-shrink-0">
-                    <div className="bg-red-500/10 border border-red-500/50 text-red-400 px-4 py-3 rounded-xl flex items-center gap-3 shadow-lg shadow-red-900/20">
-                        <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                        <p className="font-medium">{error}</p>
-                        <button onClick={() => setError('')} className="ml-auto hover:text-white">
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
+                <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-500/90 text-white px-6 py-3 rounded-lg z-50 shadow-xl backdrop-blur-md">
+                    {error}
+                    <button onClick={() => setError(null)} className="ml-4 font-bold hover:text-black">✕</button>
                 </div>
             )}
 
+            {/* Success Display */}
+            {showStreamSuccess && (
+                <div className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-green-500/90 text-white px-6 py-3 rounded-lg z-50 shadow-xl backdrop-blur-md animate-fade-in-down flex items-center gap-2">
+                    <Tv className="w-5 h-5" />
+                    <span className="font-bold">Streams found and loaded!</span>
+                </div>
+            )}
             <main className="flex-1 w-full p-2 sm:p-4 sm:max-w-[1600px] sm:mx-auto">
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full">
                     {/* Left Column: Stream & Stream Manager */}

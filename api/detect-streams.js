@@ -20,7 +20,7 @@ import * as cheerio from 'cheerio';
 
 export const config = {
     runtime: 'nodejs', // Use Node.js runtime for KV support
-    maxDuration: 10, // 10 second timeout
+    maxDuration: 60, // 60 second timeout for reliable scraping
 };
 
 // Cache TTL: 1 hour
@@ -149,79 +149,78 @@ async function scrapeRobotEvents(url) {
     const links = [];
 
     try {
-        console.log(`[SCRAPE] Fetching ${url}`);
+        console.log(`[SCRAPE] Fetching ${url} (Parallel Strategies)`);
 
-        // Try direct fetch with Googlebot UA and Referer
-        let html = null;
-        try {
-            const response = await fetch(url, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-                    'Referer': 'https://www.google.com/',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                    'Accept-Language': 'en-US,en;q=0.5'
-                }
-            });
-
-            if (response.ok) {
-                html = await response.text();
-                if (html.includes('id="challenge-running"') || html.includes('Just a moment...')) {
-                    console.log(`[SCRAPE] Direct fetch blocked by security challenge`);
-                    html = null;
-                } else {
-                    console.log(`[SCRAPE] Direct fetch successful (Googlebot), got ${html.length} bytes`);
-                }
-            } else {
-                console.log(`[SCRAPE] Direct fetch failed with ${response.status}`);
+        // Helper to validate HTML content
+        const validateContent = (html, source) => {
+            if (!html || html.length < 500) throw new Error(`${source}: Content too short`);
+            if (html.includes('id="challenge-running"') || html.includes('Just a moment...')) {
+                throw new Error(`${source}: Cloudflare challenge detected`);
             }
-        } catch (directError) {
-            console.log(`[SCRAPE] Direct fetch error: ${directError.message}`);
-        }
+            return html;
+        };
 
-        if (!html) {
-            // Second try: Standard User Agent
+        // Strategy 1: Googlebot User Agent
+        const fetchGooglebot = async () => {
             try {
-                const response2 = await fetch(url, {
+                const res = await fetch(url, {
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+                        'Referer': 'https://www.google.com/',
                         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
                     }
                 });
-                if (response2.ok) {
-                    html = await response2.text();
-                    console.log(`[SCRAPE] Second try successful, got ${html.length} bytes`);
-                }
-            } catch (e) {
-                console.log(`[SCRAPE] Second try failed: ${e.message}`);
-            }
-        }
+                if (!res.ok) throw new Error(`Googlebot failed: ${res.status}`);
+                const html = await res.text();
+                return validateContent(html, 'Googlebot');
+            } catch (e) { throw e; }
+        };
 
-        // Fallback to CORS proxy if direct fetch fails
-        if (!html) {
-            console.log(`[SCRAPE] Trying CORS proxy fallback...`);
-            const corsProxy = 'https://corsproxy.io/?';
-            const proxyUrl = `${corsProxy}${encodeURIComponent(url)}`;
-
+        // Strategy 2: Standard User Agent
+        const fetchStandard = async () => {
             try {
-                const proxyResponse = await fetch(proxyUrl, {
+                const res = await fetch(url, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    }
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+                    },
+                    signal: AbortSignal.timeout(8000) // 8s timeout for standard
                 });
+                if (!res.ok) throw new Error(`Standard UA failed: ${res.status}`);
+                const html = await res.text();
+                return validateContent(html, 'Standard UA');
+            } catch (e) { throw e; }
+        };
 
-                if (proxyResponse.ok) {
-                    html = await proxyResponse.text();
-                    console.log(`[SCRAPE] CORS proxy successful, got ${html.length} bytes`);
-                } else {
-                    console.error(`[SCRAPE] CORS proxy failed with ${proxyResponse.status}`);
-                }
-            } catch (proxyError) {
-                console.error(`[SCRAPE] CORS proxy error: ${proxyError.message}`);
-            }
-        }
+        // Strategy 3: CORS Proxy
+        const fetchProxy = async () => {
+            try {
+                // Add a small delay for proxy to prioritize direct methods first if they are fast
+                await new Promise(r => setTimeout(r, 100));
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                const res = await fetch(proxyUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    },
+                    signal: AbortSignal.timeout(15000) // Longer timeout for proxy
+                });
+                if (!res.ok) throw new Error(`Proxy failed: ${res.status}`);
+                const html = await res.text();
+                return validateContent(html, 'Proxy');
+            } catch (e) { throw e; }
+        };
 
-        if (!html) {
-            console.error('[SCRAPE] All fetch methods failed');
+        // Race them! First one to return VALID content wins.
+        let html = null;
+        try {
+            html = await Promise.any([
+                fetchGooglebot(),
+                fetchStandard(),
+                fetchProxy()
+            ]);
+            console.log(`[SCRAPE] Successful fetch!`);
+        } catch (aggregateError) {
+            console.error('[SCRAPE] All parallel fetch strategies failed', aggregateError);
             return links;
         }
 
