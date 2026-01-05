@@ -1,14 +1,14 @@
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { headerData } from '../data/headerData';
 
 /**
  * WordPress Header Component
- * Displays static navigation from headerData.js
- * 
- * Header versions are managed via Admin page.
- * DO NOT MODIFY - Use Admin > Header Management to update.
+ * Displays navigation with dropdown menu support
  */
 export default function WordPressHeader() {
     const { logoUrl, navLinks } = headerData;
+    const [openDropdown, setOpenDropdown] = useState(null);
 
     return (
         <nav className="w-full px-4 sm:px-8 py-2 flex items-center justify-between">
@@ -31,11 +31,12 @@ export default function WordPressHeader() {
             </a>
 
             {/* Navigation Links */}
-            <nav className="hidden md:flex items-center gap-8">
+            <nav className="hidden md:flex items-center gap-6">
                 {navLinks.map((link, index) => {
-                    // Style the last link (Contact) as a button
                     const isContactLink = link.text.includes('Contact') || link.text.includes('Join');
+                    const hasChildren = link.children && link.children.length > 0;
 
+                    // Contact/CTA Button
                     if (isContactLink) {
                         return (
                             <a
@@ -50,13 +51,49 @@ export default function WordPressHeader() {
                         );
                     }
 
+                    // Dropdown Menu
+                    if (hasChildren) {
+                        return (
+                            <div
+                                key={index}
+                                className="relative"
+                                onMouseEnter={() => setOpenDropdown(index)}
+                                onMouseLeave={() => setOpenDropdown(null)}
+                            >
+                                <button className="flex items-center gap-1 text-white hover:text-[#4FCEEC] font-medium transition-colors text-sm">
+                                    {link.text}
+                                    <ChevronDown className={`w-4 h-4 transition-transform ${openDropdown === index ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {openDropdown === index && (
+                                    <div className="absolute top-full left-0 pt-2 z-50">
+                                        <div className="py-2 bg-gray-900 border border-gray-700 rounded-lg shadow-xl min-w-[140px]">
+                                            {link.children.map((child, childIndex) => (
+                                                <a
+                                                    key={childIndex}
+                                                    href={child.href}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="block px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+                                                >
+                                                    {child.text}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
+
+                    // Regular Link
                     return (
                         <a
                             key={index}
                             href={link.href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-white hover:text-[#4FCEEC] font-medium transition-colors uppercase text-sm tracking-wide"
+                            className="text-white hover:text-[#4FCEEC] font-medium transition-colors text-sm"
                         >
                             {link.text}
                         </a>
