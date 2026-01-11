@@ -43,6 +43,66 @@ export const getMatchDayIndex = (matchDate, eventStartDate) => {
 };
 
 /**
+ * Infer the day index for a match without a timestamp by looking at surrounding matches.
+ * For elimination matches without timestamps, place them on the same day as the last 
+ * qualification match that has a timestamp.
+ * 
+ * @param {Object} match - Match object that may not have started/scheduled
+ * @param {Array} allMatches - All matches for the event (same division)
+ * @param {string} eventStartDate - Event start date for day calculation
+ * @returns {number} Inferred day index (0-based)
+ */
+export const inferMatchDayFromContext = (match, allMatches, eventStartDate) => {
+    // If match already has a timestamp, use it directly
+    const matchDate = match.started || match.scheduled;
+    if (matchDate) {
+        return getMatchDayIndex(matchDate, eventStartDate);
+    }
+
+    // For matches without timestamps, infer from surrounding matches
+    // Strategy: Find the last qualification match with a timestamp in the same division
+    const matchDivisionId = match.division?.id;
+
+    // Filter to same division if applicable
+    const divisionMatches = matchDivisionId
+        ? allMatches.filter(m => m.division?.id === matchDivisionId)
+        : allMatches;
+
+    // Find all qualification matches with timestamps
+    const qualMatchesWithTime = divisionMatches.filter(m => {
+        const hasTime = m.started || m.scheduled;
+        const isQual = m.name && (
+            m.name.toLowerCase().includes('qual') ||
+            m.name.toLowerCase().includes('practice') ||
+            m.name.toLowerCase().includes('teamwork')
+        );
+        return hasTime && isQual;
+    });
+
+    if (qualMatchesWithTime.length > 0) {
+        // Sort by time and get the last one
+        const sortedQuals = qualMatchesWithTime.sort((a, b) => {
+            const aTime = new Date(a.started || a.scheduled).getTime();
+            const bTime = new Date(b.started || b.scheduled).getTime();
+            return bTime - aTime; // Descending (latest first)
+        });
+
+        const lastQualTime = sortedQuals[0].started || sortedQuals[0].scheduled;
+        return getMatchDayIndex(lastQualTime, eventStartDate);
+    }
+
+    // Fallback: Look for any match with a timestamp
+    const anyMatchWithTime = divisionMatches.find(m => m.started || m.scheduled);
+    if (anyMatchWithTime) {
+        const time = anyMatchWithTime.started || anyMatchWithTime.scheduled;
+        return getMatchDayIndex(time, eventStartDate);
+    }
+
+    // Ultimate fallback: Day 0
+    return 0;
+};
+
+/**
  * Find the best stream for a given match
  * @param {Object} match - Match object with started/scheduled time
  * @param {Array} streams - Array of stream objects

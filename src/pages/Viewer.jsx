@@ -23,7 +23,7 @@ import {
 import { extractVideoId, getStreamStartTime } from '../services/youtube';
 import { findWebcastCandidates } from '../services/webcastDetection';
 import { getCachedWebcast, setCachedWebcast, saveEventToHistory } from '../services/eventCache';
-import { calculateEventDays, getMatchDayIndex, findStreamForMatch, getGrayOutReason } from '../utils/streamMatching';
+import { calculateEventDays, getMatchDayIndex, findStreamForMatch, getGrayOutReason, inferMatchDayFromContext } from '../utils/streamMatching';
 import { parseCalendarDate } from '../utils/dateUtils';
 import { Analytics } from "@vercel/analytics/react";
 
@@ -1864,9 +1864,8 @@ function Viewer() {
                                                     // Group matches by day
                                                     const matchesByDay = {};
                                                     matches.forEach(match => {
-                                                        // Use started date or scheduled date or fallback to event start
-                                                        const dateToUse = match.started || match.scheduled || event?.start;
-                                                        const dayIndex = getMatchDayIndex(dateToUse, event?.start);
+                                                        // Use inferMatchDayFromContext to handle matches without timestamps
+                                                        const dayIndex = inferMatchDayFromContext(match, matches, event?.start);
                                                         if (!matchesByDay[dayIndex]) {
                                                             matchesByDay[dayIndex] = [];
                                                         }
@@ -2115,9 +2114,11 @@ function Viewer() {
                                                         if (match.division?.id !== event.divisions[0].id) return false;
                                                     }
 
-                                                    // Filter by type
-                                                    if (matchesTabState.filter === 'quals' && !match.name.toLowerCase().includes('qual')) return false;
-                                                    if (matchesTabState.filter === 'elim' && match.name.toLowerCase().includes('qual')) return false;
+                                                    // Filter by type - handle practice matches as part of quals
+                                                    const matchNameLower = match.name.toLowerCase();
+                                                    const isQualOrPractice = matchNameLower.includes('qual') || matchNameLower.includes('practice') || matchNameLower.includes('teamwork');
+                                                    if (matchesTabState.filter === 'quals' && !isQualOrPractice) return false;
+                                                    if (matchesTabState.filter === 'elim' && isQualOrPractice) return false;
 
                                                     // Search logic
                                                     if (matchesTabState.search) {
@@ -2143,11 +2144,11 @@ function Viewer() {
                                                     );
                                                 }
 
-                                                // Group by day (reuse logic)
+                                                // Group by day using inferMatchDayFromContext for proper day calculation
                                                 const matchesByDay = {};
                                                 filteredMatches.forEach(match => {
-                                                    const dateToUse = match.started || match.scheduled || event?.start;
-                                                    const dayIndex = getMatchDayIndex(dateToUse, event?.start);
+                                                    // Use all matches (not just filtered) for context when inferring day
+                                                    const dayIndex = inferMatchDayFromContext(match, allMatches, event?.start);
                                                     if (!matchesByDay[dayIndex]) matchesByDay[dayIndex] = [];
                                                     matchesByDay[dayIndex].push(match);
                                                 });
