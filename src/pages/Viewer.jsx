@@ -251,9 +251,22 @@ function Viewer() {
                     const targetPreset = presets.find(p => p.path === urlPreset);
 
                     if (targetPreset) {
-                        await handleLoadPreset(targetPreset);
-                        // Team deep linking still applies even with preset
-                        if (urlTeam) setTeamNumber(urlTeam);
+                        // Capture team/match params BEFORE calling handleLoadPreset
+                        // because handleLoadPreset will clear state
+                        const capturedTeam = urlTeam;
+                        const capturedMatch = urlMatch;
+
+                        await handleLoadPreset(targetPreset, { preserveDeepLinkParams: true });
+
+                        // Restore team/match params after preset loaded
+                        if (capturedTeam) {
+                            setTeamNumber(capturedTeam);
+                            // Don't clear urlTeam - let it remain for the team search effect
+                        }
+                        if (capturedMatch) {
+                            // urlMatch should remain set for the auto-jump effect
+                            setUrlMatch(capturedMatch);
+                        }
                         return;
                     }
                     // If not found after loading finished, it's invalid. Fall through or log?
@@ -833,7 +846,9 @@ function Viewer() {
         setTimeout(() => { isInternalLoading.current = false; }, 1000);
     };
 
-    const handleLoadPreset = async (preset) => {
+    const handleLoadPreset = async (preset, options = {}) => {
+        const { preserveDeepLinkParams = false } = options;
+
         isInternalLoading.current = true;
         setEventLoading(true);
         setError('');
@@ -841,11 +856,14 @@ function Viewer() {
         setWebcastCandidates([]);
 
         // Clear previous team/match data when switching events via preset
+        // But preserve URL params if coming from a deep link
         setTeam(null);
         setTeamNumber('');
         setMatches([]);
-        setUrlTeam(null);
-        setUrlMatch(null);
+        if (!preserveDeepLinkParams) {
+            setUrlTeam(null);
+            setUrlMatch(null);
+        }
 
         setSelectedPresetSku(preset.sku);
         setUrlPreset(preset.path); // Set preset mode in URL
