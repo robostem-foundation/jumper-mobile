@@ -1940,6 +1940,18 @@ function Viewer() {
                                                                         const canJump = matchStream && matchStream.streamStartTime;
                                                                         const isExpanded = expandedMatchId === match.id;
 
+                                                                        // DEBUG - remove after fixing
+                                                                        if (index === 0) {
+                                                                            console.log('[DEBUG MATCH GRAY]', {
+                                                                                matchName: match.name,
+                                                                                grayOutReason,
+                                                                                streamsCount: streams?.length,
+                                                                                streamsWithStartTime: streams?.filter(s => s.streamStartTime).length,
+                                                                                matchStream,
+                                                                                canJump
+                                                                            });
+                                                                        }
+
                                                                         // W/L Indicator Logic
                                                                         const isVIQC = event?.program?.code === 'VIQC' || event?.program?.code === 'VIQRC';
                                                                         let resultIndicator = null;
