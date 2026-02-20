@@ -47,6 +47,18 @@ export default async function handler(req, res) {
             return res.status(response.status).json({ error: result.error?.message || 'Failed to update config' });
         }
 
+        // Await the Google Ping. 
+        // Vercel Serverless Functions immediately freeze or kill processes once the response is sent.
+        // Awaiting guarantees the ping goes through. Google's ping endpoint is extremely fast, so it will not cause noticeable latency.
+        try {
+            const pingResponse = await fetch('https://www.google.com/ping?sitemap=https://jumper.robostem.org/sitemap.xml');
+            if (!pingResponse.ok) {
+                console.warn(`Google Ping returned non-OK status: ${pingResponse.status}`);
+            }
+        } catch (pingError) {
+            console.error('Error during Google Ping:', pingError);
+        }
+
         return res.status(200).json({ success: true, result });
     } catch (error) {
         console.error('Error saving routes:', error);

@@ -179,6 +179,23 @@ function Viewer() {
         }
     }, [event, eventLoading]);
 
+    // Dynamic SEO Metadata
+    useEffect(() => {
+        if (event && event.name) {
+            document.title = `${event.name} | VEX Match Jumper`;
+            const metaDescription = document.querySelector('meta[name="description"]');
+            if (metaDescription) {
+                metaDescription.setAttribute('content', `Instantly jump to matches of ${event.name}'s livestream using VEX Jumper.`);
+            }
+        } else {
+            document.title = 'VEX Match Jumper';
+            const metaDescription = document.querySelector('meta[name="description"]');
+            if (metaDescription) {
+                metaDescription.setAttribute('content', 'VEX Match Jumper syncs RobotEvents match data with YouTube livestreams. Stop scrubbing through hours of video and jump directly to any VEX Robotics match.');
+            }
+        }
+    }, [event]);
+
     // Auto-save to history whenever event or streams change
     useEffect(() => {
         if (event && streams.length > 0) {
