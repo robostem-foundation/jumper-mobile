@@ -182,16 +182,16 @@ function Viewer() {
     // Dynamic SEO Metadata
     useEffect(() => {
         if (event && event.name) {
-            document.title = `${event.name} | VEX Match Jumper`;
+            document.title = `${event.name} | VEX Match Jumper / VEX Jumper`;
             const metaDescription = document.querySelector('meta[name="description"]');
             if (metaDescription) {
-                metaDescription.setAttribute('content', `Instantly jump to matches of ${event.name}'s livestream using VEX Jumper.`);
+                metaDescription.setAttribute('content', `Instantly jump to matches of ${event.name}'s livestream using VEX Match Jumper / VEX Jumper.`);
             }
         } else {
-            document.title = 'VEX Match Jumper';
+            document.title = 'VEX Match Jumper / VEX Jumper';
             const metaDescription = document.querySelector('meta[name="description"]');
             if (metaDescription) {
-                metaDescription.setAttribute('content', 'VEX Match Jumper syncs RobotEvents match data with YouTube livestreams. Stop scrubbing through hours of video and jump directly to any VEX Robotics match.');
+                metaDescription.setAttribute('content', 'VEX Match Jumper / VEX Jumper syncs RobotEvents match data with YouTube livestreams. Stop scrubbing through hours of video and jump directly to any VEX Robotics match.');
             }
         }
     }, [event]);
