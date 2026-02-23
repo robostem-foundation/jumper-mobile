@@ -182,10 +182,13 @@ function Viewer() {
     // Dynamic SEO Metadata
     useEffect(() => {
         if (event && event.name) {
-            document.title = `${event.name} | VEX Match Jumper / VEX Jumper`;
+            // The RobotEvents API separates the subtitle with a colon, e.g. "Event Name: Subtitle"
+            // We only want the primary title portion for SEO metadata.
+            const cleanName = event.name.split(':')[0].trim();
+            document.title = `${cleanName} | VEX Match Jumper / VEX Jumper`;
             const metaDescription = document.querySelector('meta[name="description"]');
             if (metaDescription) {
-                metaDescription.setAttribute('content', `Instantly jump to matches of ${event.name}'s livestream using VEX Match Jumper / VEX Jumper.`);
+                metaDescription.setAttribute('content', `Instantly jump to matches of ${cleanName}'s livestream using VEX Match Jumper / VEX Jumper.`);
             }
         } else {
             document.title = 'VEX Match Jumper / VEX Jumper';
