@@ -50,15 +50,7 @@ function generateSitemapXml(routes) {
         const changefreq = isTop3 ? 'weekly' : 'monthly';
         const lastmod = isTop3 ? `<lastmod>${today}</lastmod>\n` : '';
 
-        // Add the clean shortlink URL
-        xml += `  <url>\n`;
-        xml += `    <loc>${baseUrl}/${path}</loc>\n`;
-        if (lastmod) xml += `    ${lastmod}`;
-        xml += `    <changefreq>${changefreq}</changefreq>\n`;
-        xml += `    <priority>${priority}</priority>\n`;
-        xml += `  </url>\n`;
-
-        // Add the exact preset query param URL that actually renders the content
+        // Use the /?preset= URL as the canonical URL since /path just redirects there
         xml += `  <url>\n`;
         xml += `    <loc>${baseUrl}/?preset=${path}</loc>\n`;
         if (lastmod) xml += `    ${lastmod}`;
