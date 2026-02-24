@@ -32,6 +32,51 @@ const TABS = [
     { key: 'matches', label: 'Matches' },
 ];
 
+// ─── Group matches by actual event day ───────────────────────────
+function groupMatchesByEventDay(matches, event) {
+    // Determine number of event days
+    let numDays = 1;
+    if (event?.start && event?.end) {
+        const s = new Date(event.start.split('T')[0]);
+        const e = new Date(event.end.split('T')[0]);
+        numDays = Math.max(1, Math.round((e - s) / 86400000) + 1);
+    }
+    if (numDays <= 1) return matches; // single day — no headers
+
+    const eventStart = new Date(event.start.split('T')[0]);
+    const groups = new Map();
+
+    matches.forEach(m => {
+        const timeStr = m.started || m.scheduled;
+        if (!timeStr) {
+            if (!groups.has(-1)) groups.set(-1, []);
+            groups.get(-1).push(m);
+            return;
+        }
+        // Compare UTC date parts to avoid timezone issues
+        const matchDay = new Date(timeStr.split('T')[0]);
+        const dayIdx = Math.max(0, Math.round((matchDay - eventStart) / 86400000));
+        if (!groups.has(dayIdx)) groups.set(dayIdx, []);
+        groups.get(dayIdx).push(m);
+    });
+
+    // Flatten with day-header dividers
+    const flat = [];
+    const sortedKeys = [...groups.keys()].sort((a, b) => a - b);
+    sortedKeys.forEach(dayIdx => {
+        let label;
+        if (dayIdx < 0) {
+            label = 'Unscheduled';
+        } else {
+            const d = new Date(eventStart.getTime() + dayIdx * 86400000);
+            label = `Day ${dayIdx + 1} — ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+        }
+        flat.push({ type: 'header', label, id: `hdr-${dayIdx}` });
+        groups.get(dayIdx).forEach(m => flat.push({ type: 'match', ...m }));
+    });
+    return flat;
+}
+
 // ─── Match Card ───────────────────────────────────────────────
 function MatchCard({ item, onPress }) {
     const red = item.alliances?.find(a => a.color === 'red');
@@ -281,20 +326,34 @@ export default function EventView({ event, onWatch }) {
         </View>
     );
 
-    const renderMatches = () => (
-        <View style={{ flex: 1 }}>
-            {matchesLoading
-                ? <View style={s.center}><ActivityIndicator color={Colors.accentCyan} /></View>
-                : <FlatList
-                    data={allMatches}
-                    keyExtractor={i => i.id.toString()}
-                    contentContainerStyle={{ padding: 10, gap: 8 }}
-                    renderItem={({ item }) => <MatchCard item={item} onPress={() => onWatch(item)} />}
-                    ListEmptyComponent={<View style={s.center}><Text style={s.mutedTxt}>No matches found.</Text></View>}
-                />
-            }
-        </View>
-    );
+    const renderMatches = () => {
+        const flatData = groupMatchesByEventDay(allMatches, event);
+        return (
+            <View style={{ flex: 1 }}>
+                {matchesLoading
+                    ? <View style={s.center}><ActivityIndicator color={Colors.accentCyan} /></View>
+                    : <FlatList
+                        data={flatData}
+                        keyExtractor={i => i.id?.toString() ?? i.label}
+                        contentContainerStyle={{ padding: 10, gap: 8 }}
+                        renderItem={({ item }) => {
+                            if (item.type === 'header') {
+                                return (
+                                    <View style={s.dayDivider}>
+                                        <View style={s.dayLine} />
+                                        <Text style={s.dayLabel}>{item.label}</Text>
+                                        <View style={s.dayLine} />
+                                    </View>
+                                );
+                            }
+                            return <MatchCard item={item} onPress={() => onWatch(item)} />;
+                        }}
+                        ListEmptyComponent={<View style={s.center}><Text style={s.mutedTxt}>No matches found.</Text></View>}
+                    />
+                }
+            </View>
+        );
+    };
 
     if (!event) return null;
 
@@ -364,4 +423,9 @@ const s = StyleSheet.create({
     center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 10 },
     mutedTxt: { color: Colors.textMuted, fontSize: 13, textAlign: 'center' },
     errTxt: { color: Colors.accentRed, fontSize: 13, textAlign: 'center' },
+
+    // Day divider
+    dayDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 4 },
+    dayLine: { flex: 1, height: 1, backgroundColor: Colors.cardBorder },
+    dayLabel: { color: Colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
 });
