@@ -10,10 +10,10 @@ import {
     Dimensions,
     Platform,
     StatusBar,
+    Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-    Image,
     Tv,
     Link,
     Star,
@@ -81,14 +81,20 @@ export default function HomeScreen() {
         let sku = eventUrl.trim();
         const skuMatch = sku.match(/(RE-[A-Z0-9]+-\d{2}-\d{4})/);
         if (skuMatch) sku = skuMatch[1];
-        router.push(`/matches?sku=${sku}`);
+        const liveParam = livestreamUrl.trim()
+            ? `&liveUrl=${encodeURIComponent(livestreamUrl.trim())}`
+            : '';
+        router.push(`/matches?sku=${sku}${liveParam}`);
     };
 
     const handleFeaturedSelect = (event) => {
         setSelectedEvent(event);
         setDropdownOpen(false);
         if (event.value) {
-            router.push(`/matches?sku=${event.value}`);
+            const liveParam = livestreamUrl.trim()
+                ? `&liveUrl=${encodeURIComponent(livestreamUrl.trim())}`
+                : '';
+            router.push(`/matches?sku=${event.value}${liveParam}`);
         }
     };
 
@@ -105,7 +111,7 @@ export default function HomeScreen() {
             <View style={styles.header}>
                 <Image
                     source={LOGO}
-                    style={styles.logoImage}
+                    style={{ width: width - 32, height: 56 }}
                     resizeMode="contain"
                 />
             </View>
@@ -325,9 +331,9 @@ const styles = StyleSheet.create({
         paddingBottom: 10,
         backgroundColor: Colors.background,
     },
-    logoImage: {
-        height: 32,
-        width: 200,
+    logoImage: {   /* unused — inline style used instead */
+        height: 56,
+        width: 280,
     },
 
     // ── Scroll ──
