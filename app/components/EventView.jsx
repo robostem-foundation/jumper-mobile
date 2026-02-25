@@ -78,7 +78,7 @@ function groupMatchesByEventDay(matches, event) {
 }
 
 // ─── Match Card ───────────────────────────────────────────────
-function MatchCard({ item, onPress }) {
+function MatchCard({ item, onPress, highlightTeam }) {
     const red = item.alliances?.find(a => a.color === 'red');
     const blue = item.alliances?.find(a => a.color === 'blue');
     const rs = red?.score ?? '—';
@@ -88,6 +88,18 @@ function MatchCard({ item, onPress }) {
     const blueWins = matchComplete && bs > rs;
     const redTeams = red?.teams?.map(t => t.team?.name).filter(Boolean) || [];
     const blueTeams = blue?.teams?.map(t => t.team?.name).filter(Boolean) || [];
+
+    const renderAllianceTeams = (teams) => {
+        if (!teams.length) return '—';
+        return teams.map((t, i) => {
+            const isTarget = highlightTeam && t === highlightTeam;
+            return (
+                <Text key={i} style={[s.teamTxtBase, isTarget && s.teamTxtHighlight]}>
+                    {t}{i < teams.length - 1 ? '  ' : ''}
+                </Text>
+            );
+        });
+    };
 
     return (
         <TouchableOpacity style={s.matchCard} onPress={onPress} activeOpacity={0.75}>
@@ -101,14 +113,14 @@ function MatchCard({ item, onPress }) {
             <View style={s.scoreBar}>
                 {/* Red alliance — solid if winner, outline if loser */}
                 <View style={[s.half, matchComplete && !redWins ? s.redOutline : s.redSolid]}>
-                    <Text style={s.teamTxt} numberOfLines={1}>{redTeams.join('  ') || '—'}</Text>
+                    <Text style={s.teamTxtContainer} numberOfLines={1}>{renderAllianceTeams(redTeams)}</Text>
                     <Text style={s.scoreNum}>{rs}</Text>
                 </View>
                 <View style={s.vsDivider}><Text style={s.vsText}>VS</Text></View>
                 {/* Blue alliance */}
                 <View style={[s.half, matchComplete && !blueWins ? s.blueOutline : s.blueSolid]}>
                     <Text style={s.scoreNum}>{bs}</Text>
-                    <Text style={[s.teamTxt, { textAlign: 'right' }]} numberOfLines={1}>{blueTeams.join('  ') || '—'}</Text>
+                    <Text style={[s.teamTxtContainer, { textAlign: 'right' }]} numberOfLines={1}>{renderAllianceTeams(blueTeams)}</Text>
                 </View>
             </View>
         </TouchableOpacity>
@@ -165,12 +177,14 @@ export default function EventView({ event, onWatch }) {
 
     // All Matches
     const [allMatches, setAllMatches] = useState([]);
+    const [matchSearch, setMatchSearch] = useState('');
     const [matchesLoading, setMatchesLoading] = useState(false);
 
     // Reset when event changes
     useEffect(() => {
         setTeams([]); setRankingsMap({}); setSkillsMap({});
         setAllMatches([]); setFoundTeam(null); setTeamMatches([]);
+        setTeamSearch(''); setTeamQuery(''); setMatchSearch('');
     }, [event?.id]);
 
     // Load Team List
@@ -263,16 +277,26 @@ export default function EventView({ event, onWatch }) {
                 <>
                     <View style={s.teamCard}>
                         <Text style={s.teamNum}>{foundTeam.number}</Text>
-                        <Text style={[s.teamName, { color: Colors.textPrimary, fontSize: 14 }]}>{foundTeam.team_name}</Text>
-                        {foundTeam.organization && <Text style={s.chipTxt}>{foundTeam.organization}</Text>}
+                        <Text style={s.teamCardTitle}>{foundTeam.team_name}</Text>
                     </View>
                     {teamMatches.length === 0
                         ? <View style={s.center}><Text style={s.mutedTxt}>No matches found for this team.</Text></View>
                         : <FlatList
-                            data={teamMatches}
-                            keyExtractor={i => i.id.toString()}
+                            data={groupMatchesByEventDay(teamMatches, event)}
+                            keyExtractor={i => i.id?.toString() ?? i.label}
                             contentContainerStyle={{ padding: 10, gap: 8 }}
-                            renderItem={({ item }) => <MatchCard item={item} onPress={() => onWatch(item)} />}
+                            renderItem={({ item }) => {
+                                if (item.type === 'header') {
+                                    return (
+                                        <View style={s.dayDivider}>
+                                            <View style={s.dayLine} />
+                                            <Text style={s.dayLabel}>{item.label}</Text>
+                                            <View style={s.dayLine} />
+                                        </View>
+                                    );
+                                }
+                                return <MatchCard item={item} onPress={() => onWatch(item)} highlightTeam={foundTeam.number} />;
+                            }}
                         />
                     }
                 </>
@@ -294,8 +318,7 @@ export default function EventView({ event, onWatch }) {
                     placeholder="Search teams..." placeholderTextColor={Colors.textDim}
                     style={{ flex: 1, color: Colors.textPrimary, fontSize: 13 }} />
             </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}
-                style={{ flexGrow: 0 }} contentContainerStyle={s.sortRow}>
+            <View style={s.sortRow}>
                 {[
                     { key: 'default', label: 'Default', Icon: Users },
                     { key: 'rank', label: 'Rank', Icon: Trophy },
@@ -308,7 +331,7 @@ export default function EventView({ event, onWatch }) {
                         <Text style={[s.sortTxt, sortMode === key && { color: '#0d1117' }]}>{label}</Text>
                     </TouchableOpacity>
                 ))}
-            </ScrollView>
+            </View>
             {listLoading
                 ? <View style={s.center}><ActivityIndicator color={Colors.accentCyan} /></View>
                 : <FlatList
@@ -330,9 +353,28 @@ export default function EventView({ event, onWatch }) {
     );
 
     const renderMatches = () => {
-        const flatData = groupMatchesByEventDay(allMatches, event);
+        let filteredMatches = allMatches;
+        if (matchSearch) {
+            const q = matchSearch.toLowerCase();
+            filteredMatches = allMatches.filter(m => {
+                if (m.name.toLowerCase().includes(q)) return true;
+                const r = m.alliances?.find(a => a.color === 'red')?.teams?.map(t => t.team?.name) || [];
+                const b = m.alliances?.find(a => a.color === 'blue')?.teams?.map(t => t.team?.name) || [];
+                if (r.some(t => t?.toLowerCase().includes(q))) return true;
+                if (b.some(t => t?.toLowerCase().includes(q))) return true;
+                return false;
+            });
+        }
+
+        const flatData = groupMatchesByEventDay(filteredMatches, event);
         return (
             <View style={{ flex: 1 }}>
+                <View style={s.searchBar}>
+                    <Search size={13} color={Colors.textMuted} />
+                    <TextInput value={matchSearch} onChangeText={setMatchSearch}
+                        placeholder="Search matches or teams..." placeholderTextColor={Colors.textDim}
+                        style={{ flex: 1, color: Colors.textPrimary, fontSize: 13 }} />
+                </View>
                 {matchesLoading
                     ? <View style={s.center}><ActivityIndicator color={Colors.accentCyan} /></View>
                     : <FlatList
@@ -407,7 +449,10 @@ const s = StyleSheet.create({
     vsDivider: { width: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.cardBgAlt },
     vsText: { fontSize: 8, fontWeight: '800', color: Colors.textMuted, letterSpacing: 1 },
     scoreNum: { fontSize: 18, fontWeight: '900', color: '#fff' },
-    teamTxt: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '600', flex: 1 },
+
+    teamTxtContainer: { flex: 1 },
+    teamTxtBase: { fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: '600' },
+    teamTxtHighlight: { fontWeight: '900', color: Colors.accentCyan },
 
     // Team
     teamRow: { backgroundColor: Colors.inputBg, borderRadius: 9, borderWidth: 1, borderColor: Colors.cardBorder, padding: 11, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -416,13 +461,14 @@ const s = StyleSheet.create({
     chip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
     chipTxt: { fontSize: 11, color: Colors.textMuted },
     teamCard: { marginHorizontal: 10, marginBottom: 6, backgroundColor: Colors.cardBg, borderRadius: 10, borderWidth: 1, borderColor: Colors.cardBorderBlue, padding: 12, gap: 3 },
+    teamCardTitle: { fontSize: 15, color: Colors.textPrimary, fontWeight: '700' },
 
     // Search / sort
     inputRow: { flexDirection: 'row', gap: 8, padding: 10 },
     textInput: { flex: 1, backgroundColor: Colors.inputBg, borderRadius: 9, borderWidth: 1, borderColor: Colors.cardBorder, color: Colors.textPrimary, paddingHorizontal: 13, paddingVertical: 10, fontSize: 13 },
     cyanBtn: { backgroundColor: Colors.accentCyan, borderRadius: 9, width: 44, alignItems: 'center', justifyContent: 'center' },
     searchBar: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 10, backgroundColor: Colors.inputBg, borderRadius: 9, borderWidth: 1, borderColor: Colors.cardBorder, paddingHorizontal: 11, paddingVertical: 8 },
-    sortRow: { paddingHorizontal: 10, paddingBottom: 8, gap: 8, flexDirection: 'row' },
+    sortRow: { paddingHorizontal: 10, paddingTop: 6, paddingBottom: 8, gap: 8, flexDirection: 'row' },
     sortChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.iconBg, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: Colors.cardBorder },
     sortChipOn: { backgroundColor: Colors.accentCyan, borderColor: Colors.accentCyan },
     sortTxt: { fontSize: 11, fontWeight: '600', color: Colors.textMuted },
